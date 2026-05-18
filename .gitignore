@@ -75,7 +75,7 @@ tmp/
 
 # ─── Uploads / User data ───────────────────────────────────────
 uploads/
-backups/
+/backups/
 
 # ─── Test artifacts ────────────────────────────────────────────
 test-results/

@@ -1,47 +1,71 @@
 package main
 
 import (
+	"context"
+	"database/sql"
 	"log"
 	"os"
-	"time"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v2/middleware/cors"
 	"github.com/gofiber/fiber/v2/middleware/logger"
-	"github.com/gofiber/fiber/v2/middleware/recover"
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/jackc/pgx/v5/stdlib"
+	"github.com/pressly/goose/v3"
+	"github.com/xpanel/backup/internal/handler"
+	"github.com/xpanel/backup/internal/storage"
 )
 
-var version = "dev"
-
 func main() {
-	port := os.Getenv("PORT")
-	if port == "" {
-		port = "8080"
+	dsn := os.Getenv("DATABASE_URL")
+	if dsn == "" {
+		dsn = "postgres://xppanel:devpassword@localhost:5432/xppanel"
 	}
 
-	app := fiber.New(fiber.Config{
-		AppName:      "XP-Panel backup " + version,
-		ReadTimeout:  15 * time.Second,
-		WriteTimeout: 15 * time.Second,
-	})
-	app.Use(recover.New())
-	app.Use(logger.New())
+	pool, err := pgxpool.New(context.Background(), dsn)
+	if err != nil {
+		log.Fatalf("db connect: %v", err)
+	}
+	defer pool.Close()
+
+	sqlDB := stdlib.OpenDBFromPool(pool)
+	runMigrations(sqlDB)
+
+	backupDir := os.Getenv("BACKUP_DIR")
+	if backupDir == "" {
+		backupDir = "/var/backups/xppanel"
+	}
+	store := storage.NewLocalStorage(backupDir)
+	bh := handler.NewBackupHandler(pool, store)
+
+	app := fiber.New()
+	app.Use(logger.New(), cors.New())
+
+	v1 := app.Group("/api/v1")
+	v1.Get("/backups", bh.ListBackups)
+	v1.Post("/backups", bh.CreateBackup)
+	v1.Delete("/backups/:id", bh.DeleteBackup)
+	v1.Get("/backups/schedules", bh.ListSchedules)
+	v1.Post("/backups/schedules", bh.CreateSchedule)
+	v1.Delete("/backups/schedules/:id", bh.DeleteSchedule)
 
 	app.Get("/health", func(c *fiber.Ctx) error {
-		return c.JSON(fiber.Map{"status": "ok", "service": "backup", "version": version})
+		return c.JSON(fiber.Map{"status": "ok", "service": "backup"})
 	})
 
-	// TODO: implement backup routes (Phase 2+)
-	app.All("/*", func(c *fiber.Ctx) error {
-		return c.Status(fiber.StatusNotImplemented).JSON(fiber.Map{
-			"error": fiber.Map{
-				"message": "backup service not yet implemented",
-				"service": "backup",
-			},
-		})
-	})
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8087"
+	}
+	log.Printf("Backup service running on :%s", port)
+	log.Fatal(app.Listen(":" + port))
+}
 
-	log.Printf("backup service listening on :%s", port)
-	if err := app.Listen(":" + port); err != nil {
-		log.Fatalf("server error: %v", err)
+func runMigrations(db *sql.DB) {
+	if err := goose.SetDialect("postgres"); err != nil {
+		log.Fatalf("goose dialect: %v", err)
+	}
+	if err := goose.Up(db, "migrations"); err != nil {
+		log.Fatalf("goose up: %v", err)
 	}
 }
