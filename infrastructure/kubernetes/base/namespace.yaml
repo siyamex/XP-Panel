@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: xp-panel
+  labels:
+    app.kubernetes.io/name: xp-panel
+    app.kubernetes.io/managed-by: kustomize

@@ -1,0 +1,24 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+metadata:
+  name: xp-panel-base
+
+namespace: xp-panel
+
+resources:
+  - namespace.yaml
+  - configmap.yaml
+  - secrets.yaml
+  - ingress.yaml
+  - services/gateway/deployment.yaml
+  - services/gateway/service.yaml
+  - services/gateway/hpa.yaml
+  - services/auth/deployment.yaml
+  - services/auth/service.yaml
+  - services/web/deployment.yaml
+  - services/web/service.yaml
+
+commonLabels:
+  app.kubernetes.io/name: xp-panel
+  app.kubernetes.io/managed-by: kustomize

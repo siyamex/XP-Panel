@@ -1,0 +1,81 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: auth
+  namespace: xp-panel
+  labels:
+    app: auth
+    app.kubernetes.io/component: auth
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: auth
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: auth
+    spec:
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: auth
+          image: ghcr.io/xp-panel/xp-panel/auth:latest
+          ports:
+            - containerPort: 8081
+              name: http
+          env:
+            - name: PORT
+              value: "8081"
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: xp-panel-secrets
+                  key: database-url
+            - name: REDIS_URL
+              valueFrom:
+                secretKeyRef:
+                  name: xp-panel-secrets
+                  key: redis-url
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: xp-panel-secrets
+                  key: jwt-secret
+            - name: JWT_EXPIRY
+              value: "15m"
+            - name: REFRESH_TOKEN_EXPIRY
+              value: "168h"
+            - name: VAULT_ADDR
+              valueFrom:
+                configMapKeyRef:
+                  name: xp-panel-config
+                  key: vault-addr
+            - name: VAULT_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: xp-panel-secrets
+                  key: vault-token
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8081
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8081
+            initialDelaySeconds: 5
+            periodSeconds: 10

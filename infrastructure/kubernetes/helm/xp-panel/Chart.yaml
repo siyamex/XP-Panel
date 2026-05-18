@@ -1,0 +1,31 @@
+apiVersion: v2
+name: xp-panel
+description: XP-Panel — Enterprise Web Hosting Control Panel
+type: application
+version: 0.1.0
+appVersion: "1.0.0"
+
+keywords:
+  - hosting
+  - control-panel
+  - cpanel
+  - directadmin
+  - web-hosting
+
+home: https://github.com/xp-panel/xp-panel
+sources:
+  - https://github.com/xp-panel/xp-panel
+
+maintainers:
+  - name: XP-Panel Team
+    url: https://xp-panel.io
+
+dependencies:
+  - name: postgresql
+    version: "15.x.x"
+    repository: https://charts.bitnami.com/bitnami
+    condition: postgresql.enabled
+  - name: redis
+    version: "19.x.x"
+    repository: https://charts.bitnami.com/bitnami
+    condition: redis.enabled

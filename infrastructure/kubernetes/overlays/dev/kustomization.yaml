@@ -1,0 +1,44 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namePrefix: ""
+nameSuffix: ""
+
+namespace: xp-panel-dev
+
+resources:
+  - ../../base
+
+patches:
+  # Single replicas in dev
+  - patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 1
+    target:
+      kind: Deployment
+
+  # Remove HPA in dev
+  - patch: |-
+      $patch: delete
+      apiVersion: autoscaling/v2
+      kind: HorizontalPodAutoscaler
+      metadata:
+        name: gateway
+    target:
+      kind: HorizontalPodAutoscaler
+
+configMapGenerator:
+  - name: xp-panel-config
+    behavior: merge
+    literals:
+      - api-url=http://localhost:8080
+      - ws-url=ws://localhost:8080
+
+images:
+  - name: ghcr.io/xp-panel/xp-panel/gateway
+    newTag: latest
+  - name: ghcr.io/xp-panel/xp-panel/auth
+    newTag: latest
+  - name: ghcr.io/xp-panel/xp-panel/web
+    newTag: latest

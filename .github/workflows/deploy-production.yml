@@ -1,0 +1,56 @@
+name: Deploy to Production
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+jobs:
+  deploy:
+    name: Deploy Production
+    runs-on: ubuntu-latest
+    environment: production
+    concurrency:
+      group: production-deploy
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Extract version
+        id: version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v4
+
+      - name: Configure kubeconfig
+        run: echo "${{ secrets.PRODUCTION_KUBECONFIG }}" | base64 -d > /tmp/kubeconfig
+
+      - name: Run database migrations
+        env:
+          KUBECONFIG: /tmp/kubeconfig
+        run: |
+          kubectl create job --from=cronjob/db-migrator migration-${{ steps.version.outputs.VERSION }} \
+            -n xp-panel-production || true
+          kubectl wait --for=condition=complete job/migration-${{ steps.version.outputs.VERSION }} \
+            -n xp-panel-production --timeout=300s
+
+      - name: Deploy to production (rolling update)
+        env:
+          KUBECONFIG: /tmp/kubeconfig
+          VERSION: ${{ steps.version.outputs.VERSION }}
+        run: |
+          cd infrastructure/kubernetes
+          kustomize edit set image \
+            ghcr.io/${{ github.repository }}/gateway:$VERSION \
+            ghcr.io/${{ github.repository }}/auth:$VERSION \
+            ghcr.io/${{ github.repository }}/web:$VERSION
+          kubectl apply -k overlays/production
+          kubectl rollout status deployment/gateway -n xp-panel-production --timeout=300s
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.VERSION }}
+          generate_release_notes: true
+          draft: false

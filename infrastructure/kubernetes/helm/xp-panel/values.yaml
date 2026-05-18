@@ -1,0 +1,133 @@
+# XP-Panel Helm Chart Values
+# See https://github.com/xp-panel/xp-panel for full documentation
+
+global:
+  imageRegistry: ghcr.io
+  imagePullPolicy: IfNotPresent
+  storageClass: ""
+
+# Image configuration
+image:
+  repository: xp-panel/xp-panel
+  tag: latest
+  pullPolicy: IfNotPresent
+
+# Ingress
+ingress:
+  enabled: true
+  className: nginx
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: "100m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
+  hosts:
+    api: api.xp-panel.io
+    web: xp-panel.io
+  tls:
+    enabled: true
+    secretName: xp-panel-tls
+    # Set to true to use cert-manager
+    certManager: true
+    clusterIssuer: letsencrypt-prod
+
+# Gateway service
+gateway:
+  enabled: true
+  replicas: 2
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 70
+
+# Auth service
+auth:
+  enabled: true
+  replicas: 2
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+  config:
+    jwtExpiry: 15m
+    refreshTokenExpiry: 168h
+    mfaEnabled: true
+    passkeysEnabled: true
+
+# Web frontend
+web:
+  enabled: true
+  replicas: 2
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 1000m
+      memory: 512Mi
+
+# Secrets — populate these via --set or external secrets
+secrets:
+  databaseUrl: ""
+  redisUrl: ""
+  jwtSecret: ""
+  vaultToken: ""
+  stripeSecretKey: ""
+  anthropicApiKey: ""
+
+# PostgreSQL (bitnami chart)
+postgresql:
+  enabled: true
+  auth:
+    database: xppanel
+    username: xppanel
+    existingSecret: xp-panel-db-secret
+    secretKeys:
+      adminPasswordKey: postgres-password
+      userPasswordKey: password
+  primary:
+    persistence:
+      enabled: true
+      size: 20Gi
+    resources:
+      requests:
+        cpu: 250m
+        memory: 256Mi
+      limits:
+        cpu: 2000m
+        memory: 2Gi
+
+# Redis (bitnami chart)
+redis:
+  enabled: true
+  auth:
+    enabled: true
+    existingSecret: xp-panel-redis-secret
+    existingSecretPasswordKey: redis-password
+  master:
+    persistence:
+      enabled: true
+      size: 5Gi
+  replica:
+    replicaCount: 1
+
+# cert-manager ClusterIssuer (created if certManager.install=true)
+certManager:
+  install: false
+  email: admin@xp-panel.io
+  server: https://acme-v02.api.letsencrypt.org/directory
+
+# Monitoring
+serviceMonitor:
+  enabled: false
+  namespace: monitoring
+  interval: 30s

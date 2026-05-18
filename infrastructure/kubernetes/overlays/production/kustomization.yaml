@@ -1,0 +1,77 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: xp-panel-production
+
+resources:
+  - ../../base
+
+patches:
+  # Production uses more replicas
+  - patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 3
+    target:
+      kind: Deployment
+      name: gateway
+
+  - patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 3
+    target:
+      kind: Deployment
+      name: auth
+
+  - patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 2
+    target:
+      kind: Deployment
+      name: web
+
+  # Production HPA — more aggressive scaling
+  - patch: |-
+      - op: replace
+        path: /spec/minReplicas
+        value: 3
+      - op: replace
+        path: /spec/maxReplicas
+        value: 20
+    target:
+      kind: HorizontalPodAutoscaler
+
+  # Production resource limits
+  - patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/cpu
+        value: "2"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/memory
+        value: 1Gi
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/cpu
+        value: 200m
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/memory
+        value: 256Mi
+    target:
+      kind: Deployment
+      name: gateway
+
+configMapGenerator:
+  - name: xp-panel-config
+    behavior: merge
+    literals:
+      - api-url=https://api.xp-panel.io
+      - ws-url=wss://api.xp-panel.io
+
+images:
+  - name: ghcr.io/xp-panel/xp-panel/gateway
+    newTag: latest
+  - name: ghcr.io/xp-panel/xp-panel/auth
+    newTag: latest
+  - name: ghcr.io/xp-panel/xp-panel/web
+    newTag: latest

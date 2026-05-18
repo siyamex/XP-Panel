@@ -1,0 +1,19 @@
+go 1.23
+
+use (
+	./services/gateway
+	./services/auth
+	./services/dns
+	./services/mail
+	./services/webserver
+	./services/filemanager
+	./services/dbmanager
+	./services/backup
+	./services/monitoring
+	./services/billing
+	./services/ai
+	./services/security
+	./services/marketplace
+	./services/devops
+	./services/notification
+)

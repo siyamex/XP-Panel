@@ -1,0 +1,400 @@
+name: xp-panel
+
+# ─── Shared environment defaults ──────────────────────────────────────────────
+x-service-defaults: &service-defaults
+  restart: unless-stopped
+  networks: [xp-net]
+
+x-go-service: &go-service
+  <<: *service-defaults
+  build:
+    context: .
+    args:
+      VERSION: ${VERSION:-dev}
+  environment: &go-env
+    DATABASE_URL: postgres://xppanel:${POSTGRES_PASSWORD:-devpassword}@postgres:5432/xppanel?sslmode=disable
+    REDIS_URL: redis://redis:6379/0
+    VAULT_ADDR: http://vault:8200
+    VAULT_TOKEN: ${VAULT_TOKEN:-dev-root-token}
+    LOG_LEVEL: ${LOG_LEVEL:-debug}
+    ENV: ${ENV:-development}
+  depends_on:
+    postgres:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+
+# ─── Services ─────────────────────────────────────────────────────────────────
+services:
+
+  # ── Infrastructure ────────────────────────────────────────────────────────
+  postgres:
+    <<: *service-defaults
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: xppanel
+      POSTGRES_USER: xppanel
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-devpassword}
+      POSTGRES_INITDB_ARGS: --encoding=UTF8 --locale=C
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U xppanel -d xppanel"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  redis:
+    <<: *service-defaults
+    image: redis:7-alpine
+    command: >
+      redis-server
+      --appendonly yes
+      --maxmemory 256mb
+      --maxmemory-policy allkeys-lru
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  clickhouse:
+    <<: *service-defaults
+    image: clickhouse/clickhouse-server:24-alpine
+    ports:
+      - "8123:8123"
+      - "9000:9000"
+    volumes:
+      - chdata:/var/lib/clickhouse
+      - ./infrastructure/docker/clickhouse/config.xml:/etc/clickhouse-server/config.d/custom.xml:ro
+    environment:
+      CLICKHOUSE_DB: xppanel
+      CLICKHOUSE_USER: xppanel
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-devpassword}
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+    healthcheck:
+      test: ["CMD", "clickhouse-client", "--query", "SELECT 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  vault:
+    <<: *service-defaults
+    image: hashicorp/vault:1.16
+    command: server -dev -dev-root-token-id=dev-root-token
+    ports:
+      - "8200:8200"
+    environment:
+      VAULT_DEV_ROOT_TOKEN_ID: dev-root-token
+      VAULT_DEV_LISTEN_ADDRESS: "0.0.0.0:8200"
+      VAULT_LOG_LEVEL: warn
+    cap_add:
+      - IPC_LOCK
+
+  minio:
+    <<: *service-defaults
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+    volumes:
+      - miniodata:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  powerdns:
+    <<: *service-defaults
+    image: powerdns/pdns-auth:49
+    ports:
+      - "5300:53/tcp"
+      - "5300:53/udp"
+      - "8081:8081"
+    environment:
+      PDNS_AUTH_API: yes
+      PDNS_AUTH_API_KEY: ${PDNS_API_KEY:-pdnsapikey}
+      PDNS_AUTH_WEBSERVER: yes
+      PDNS_AUTH_WEBSERVER_ADDRESS: 0.0.0.0
+      PDNS_AUTH_WEBSERVER_PORT: 8081
+      PDNS_AUTH_WEBSERVER_ALLOW_FROM: 0.0.0.0/0
+      PDNS_AUTH_LAUNCH: gsqlite3
+      PDNS_AUTH_GSQLITE3_DATABASE: /var/lib/powerdns/pdns.db
+
+  mailhog:
+    <<: *service-defaults
+    image: mailhog/mailhog:latest
+    ports:
+      - "1025:1025"   # SMTP
+      - "8025:8025"   # Web UI
+
+  # ── Backend Services ──────────────────────────────────────────────────────
+  gateway:
+    <<: *go-service
+    build:
+      context: ./services/gateway
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      <<: *go-env
+      PORT: 8080
+      JWT_SECRET: ${JWT_SECRET:-dev-jwt-secret-change-in-production-minimum-32-chars}
+      AUTH_SERVICE_URL: http://auth:8081
+      DNS_SERVICE_URL: http://dns:8082
+      MAIL_SERVICE_URL: http://mail:8083
+      WEBSERVER_SERVICE_URL: http://webserver:8084
+      FILEMANAGER_SERVICE_URL: http://filemanager:8085
+      DBMANAGER_SERVICE_URL: http://dbmanager:8086
+      BACKUP_SERVICE_URL: http://backup:8087
+      MONITORING_SERVICE_URL: http://monitoring:8088
+      BILLING_SERVICE_URL: http://billing:8089
+      AI_SERVICE_URL: http://ai:8090
+      SECURITY_SERVICE_URL: http://security:8091
+      MARKETPLACE_SERVICE_URL: http://marketplace:8092
+      DEVOPS_SERVICE_URL: http://devops:8093
+      NOTIFICATION_SERVICE_URL: http://notification:8094
+      RATE_LIMIT_REQUESTS: 1000
+      RATE_LIMIT_WINDOW: 60
+    depends_on:
+      auth:
+        condition: service_started
+
+  auth:
+    <<: *go-service
+    build:
+      context: ./services/auth
+      dockerfile: Dockerfile
+    ports:
+      - "8081:8081"
+    environment:
+      <<: *go-env
+      PORT: 8081
+      JWT_SECRET: ${JWT_SECRET:-dev-jwt-secret-change-in-production-minimum-32-chars}
+      JWT_ACCESS_EXPIRY: 15m
+      JWT_REFRESH_EXPIRY: 168h
+      WEBAUTHN_ORIGIN: ${WEBAUTHN_ORIGIN:-http://localhost:3000}
+      WEBAUTHN_RPID: ${WEBAUTHN_RPID:-localhost}
+      SMTP_HOST: mailhog
+      SMTP_PORT: 1025
+      SMTP_FROM: noreply@xp-panel.local
+      OAUTH_GITHUB_CLIENT_ID: ${OAUTH_GITHUB_CLIENT_ID:-}
+      OAUTH_GITHUB_CLIENT_SECRET: ${OAUTH_GITHUB_CLIENT_SECRET:-}
+      OAUTH_GOOGLE_CLIENT_ID: ${OAUTH_GOOGLE_CLIENT_ID:-}
+      OAUTH_GOOGLE_CLIENT_SECRET: ${OAUTH_GOOGLE_CLIENT_SECRET:-}
+
+  dns:
+    <<: *go-service
+    build:
+      context: ./services/dns
+      dockerfile: Dockerfile
+    ports:
+      - "8082:8082"
+    environment:
+      <<: *go-env
+      PORT: 8082
+      PDNS_API_URL: http://powerdns:8081
+      PDNS_API_KEY: ${PDNS_API_KEY:-pdnsapikey}
+
+  mail:
+    <<: *go-service
+    build:
+      context: ./services/mail
+      dockerfile: Dockerfile
+    ports:
+      - "8083:8083"
+    environment:
+      <<: *go-env
+      PORT: 8083
+
+  webserver:
+    <<: *go-service
+    build:
+      context: ./services/webserver
+      dockerfile: Dockerfile
+    ports:
+      - "8084:8084"
+    environment:
+      <<: *go-env
+      PORT: 8084
+
+  filemanager:
+    <<: *go-service
+    build:
+      context: ./services/filemanager
+      dockerfile: Dockerfile
+    ports:
+      - "8085:8085"
+    environment:
+      <<: *go-env
+      PORT: 8085
+
+  dbmanager:
+    <<: *go-service
+    build:
+      context: ./services/dbmanager
+      dockerfile: Dockerfile
+    ports:
+      - "8086:8086"
+    environment:
+      <<: *go-env
+      PORT: 8086
+
+  backup:
+    <<: *go-service
+    build:
+      context: ./services/backup
+      dockerfile: Dockerfile
+    ports:
+      - "8087:8087"
+    environment:
+      <<: *go-env
+      PORT: 8087
+      S3_ENDPOINT: http://minio:9000
+      S3_ACCESS_KEY: ${MINIO_ROOT_USER:-minioadmin}
+      S3_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin}
+      S3_BUCKET: xp-panel-backups
+      BACKUP_ENCRYPTION_KEY: ${BACKUP_ENCRYPTION_KEY:-dev-backup-key-change-in-production}
+
+  monitoring:
+    <<: *go-service
+    build:
+      context: ./services/monitoring
+      dockerfile: Dockerfile
+    ports:
+      - "8088:8088"
+    environment:
+      <<: *go-env
+      PORT: 8088
+      CLICKHOUSE_URL: clickhouse://xppanel:${CLICKHOUSE_PASSWORD:-devpassword}@clickhouse:9000/xppanel
+      METRICS_INTERVAL: 5s
+      ALERT_EVAL_INTERVAL: 30s
+
+  billing:
+    <<: *go-service
+    build:
+      context: ./services/billing
+      dockerfile: Dockerfile
+    ports:
+      - "8089:8089"
+    environment:
+      <<: *go-env
+      PORT: 8089
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
+
+  ai:
+    <<: *go-service
+    build:
+      context: ./services/ai
+      dockerfile: Dockerfile
+    ports:
+      - "8090:8090"
+    environment:
+      <<: *go-env
+      PORT: 8090
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      AI_MODEL: ${AI_MODEL:-claude-sonnet-4-6}
+      AI_MAX_TOKENS: 4096
+
+  security:
+    <<: *go-service
+    build:
+      context: ./services/security
+      dockerfile: Dockerfile
+    ports:
+      - "8091:8091"
+    environment:
+      <<: *go-env
+      PORT: 8091
+      GEOIP_DB_PATH: /data/GeoLite2-City.mmdb
+
+  marketplace:
+    <<: *go-service
+    build:
+      context: ./services/marketplace
+      dockerfile: Dockerfile
+    ports:
+      - "8092:8092"
+    environment:
+      <<: *go-env
+      PORT: 8092
+
+  devops:
+    <<: *go-service
+    build:
+      context: ./services/devops
+      dockerfile: Dockerfile
+    ports:
+      - "8093:8093"
+    environment:
+      <<: *go-env
+      PORT: 8093
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+
+  notification:
+    <<: *go-service
+    build:
+      context: ./services/notification
+      dockerfile: Dockerfile
+    ports:
+      - "8094:8094"
+    environment:
+      <<: *go-env
+      PORT: 8094
+      SMTP_HOST: mailhog
+      SMTP_PORT: 1025
+      SMTP_FROM: alerts@xp-panel.local
+
+  # ── Frontend ──────────────────────────────────────────────────────────────
+  web:
+    <<: *service-defaults
+    build:
+      context: ./apps/web
+      dockerfile: Dockerfile
+      target: dev
+    ports:
+      - "3000:3000"
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:8080
+      NEXT_PUBLIC_WS_URL: ws://localhost:8080
+      NEXT_PUBLIC_APP_NAME: XP-Panel
+      NEXT_PUBLIC_APP_VERSION: ${VERSION:-dev}
+    volumes:
+      - ./apps/web:/app
+      - web_nm:/app/node_modules
+      - web_next:/app/.next
+    depends_on:
+      - gateway
+
+# ─── Volumes ──────────────────────────────────────────────────────────────────
+volumes:
+  pgdata:
+  redisdata:
+  chdata:
+  miniodata:
+  web_nm:
+  web_next:
+
+# ─── Networks ─────────────────────────────────────────────────────────────────
+networks:
+  xp-net:
+    driver: bridge

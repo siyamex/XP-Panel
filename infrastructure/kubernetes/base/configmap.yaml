@@ -1,0 +1,40 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: xp-panel-config
+  namespace: xp-panel
+  labels:
+    app.kubernetes.io/name: xp-panel
+    app.kubernetes.io/managed-by: kustomize
+data:
+  # Service URLs (internal cluster DNS)
+  auth-service-url: "http://auth:8081"
+  dns-service-url: "http://dns:8082"
+  mail-service-url: "http://mail:8083"
+  webserver-service-url: "http://webserver:8084"
+  filemanager-service-url: "http://filemanager:8085"
+  dbmanager-service-url: "http://dbmanager:8086"
+  backup-service-url: "http://backup:8087"
+  monitoring-service-url: "http://monitoring:8088"
+  billing-service-url: "http://billing:8089"
+  ai-service-url: "http://ai:8090"
+  security-service-url: "http://security:8091"
+  marketplace-service-url: "http://marketplace:8092"
+  devops-service-url: "http://devops:8093"
+  notification-service-url: "http://notification:8094"
+
+  # Vault configuration
+  vault-addr: "http://vault:8200"
+
+  # Public URLs (overridden per overlay)
+  api-url: "https://api.xp-panel.io"
+  ws-url: "wss://api.xp-panel.io"
+
+  # JWT configuration
+  jwt-expiry: "15m"
+  refresh-token-expiry: "168h"
+
+  # Feature flags
+  mfa-enabled: "true"
+  passkeys-enabled: "true"
+  oauth-enabled: "true"

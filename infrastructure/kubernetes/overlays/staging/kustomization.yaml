@@ -1,0 +1,63 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: xp-panel-staging
+
+resources:
+  - ../../base
+
+patches:
+  # Staging uses 1 replica to save cost
+  - patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 1
+    target:
+      kind: Deployment
+
+  # Adjust HPA for staging
+  - patch: |-
+      - op: replace
+        path: /spec/minReplicas
+        value: 1
+      - op: replace
+        path: /spec/maxReplicas
+        value: 3
+    target:
+      kind: HorizontalPodAutoscaler
+
+  # Staging ingress host override
+  - patch: |-
+      - op: replace
+        path: /spec/tls/0/hosts/0
+        value: staging.xp-panel.io
+      - op: replace
+        path: /spec/tls/0/hosts/1
+        value: staging-api.xp-panel.io
+      - op: replace
+        path: /spec/tls/0/secretName
+        value: xp-panel-staging-tls
+      - op: replace
+        path: /spec/rules/0/host
+        value: staging-api.xp-panel.io
+      - op: replace
+        path: /spec/rules/1/host
+        value: staging.xp-panel.io
+    target:
+      kind: Ingress
+      name: xp-panel
+
+configMapGenerator:
+  - name: xp-panel-config
+    behavior: merge
+    literals:
+      - api-url=https://staging-api.xp-panel.io
+      - ws-url=wss://staging-api.xp-panel.io
+
+images:
+  - name: ghcr.io/xp-panel/xp-panel/gateway
+    newTag: latest
+  - name: ghcr.io/xp-panel/xp-panel/auth
+    newTag: latest
+  - name: ghcr.io/xp-panel/xp-panel/web
+    newTag: latest

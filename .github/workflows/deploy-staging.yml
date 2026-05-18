@@ -1,0 +1,43 @@
+name: Deploy to Staging
+
+on:
+  push:
+    branches: [develop]
+
+jobs:
+  deploy:
+    name: Deploy Staging
+    runs-on: ubuntu-latest
+    environment: staging
+    concurrency:
+      group: staging-deploy
+      cancel-in-progress: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v4
+
+      - name: Configure kubeconfig
+        run: echo "${{ secrets.STAGING_KUBECONFIG }}" | base64 -d > /tmp/kubeconfig
+
+      - name: Deploy to staging
+        env:
+          KUBECONFIG: /tmp/kubeconfig
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          cd infrastructure/kubernetes
+          kustomize edit set image \
+            ghcr.io/${{ github.repository }}/gateway:$IMAGE_TAG \
+            ghcr.io/${{ github.repository }}/auth:$IMAGE_TAG \
+            ghcr.io/${{ github.repository }}/web:$IMAGE_TAG
+          kubectl apply -k overlays/staging
+          kubectl rollout status deployment/gateway -n xp-panel-staging --timeout=120s
+          kubectl rollout status deployment/auth -n xp-panel-staging --timeout=120s
+          kubectl rollout status deployment/web -n xp-panel-staging --timeout=120s
+
+      - name: Smoke test
+        run: |
+          sleep 10
+          curl -f https://staging.xp-panel.io/health || exit 1
+          echo "✅ Staging deployment successful"

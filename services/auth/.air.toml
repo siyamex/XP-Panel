@@ -1,0 +1,14 @@
+[build]
+  cmd = "go build -o ./tmp/auth ./cmd/auth"
+  bin = "./tmp/auth"
+  full_bin = "./tmp/auth"
+  include_ext = ["go"]
+  exclude_dir = ["tmp", "vendor"]
+  delay = 500
+
+[log]
+  time = true
+
+[color]
+  build = "yellow"
+  runner = "green"
