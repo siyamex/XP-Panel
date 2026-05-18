@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="https://raw.githubusercontent.com/siyamex/XP-Panel/refs/heads/master/logo.svg" alt="XP-Panel Logo" width="120" height="120" />
+<img src="https://raw.githubusercontent.com/siyamex/XP-Panel/refs/heads/master/logo.svg" alt="XP-Panel Logo" width="320" height="220" />
 
 # XP-Panel
 
