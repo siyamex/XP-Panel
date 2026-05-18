@@ -3,45 +3,76 @@ package main
 import (
 	"log"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/logger"
 	"github.com/gofiber/fiber/v2/middleware/recover"
+	"github.com/xp-panel/xp-panel/services/filemanager/internal/handler"
+	"github.com/xp-panel/xp-panel/services/filemanager/internal/service"
 )
 
-var version = "dev"
-
 func main() {
-	port := os.Getenv("PORT")
-	if port == "" {
-		port = "8080"
-	}
+	port := env("PORT", "8085")
+	rootDir := env("FILE_ROOT", "/var/www")
+
+	fsSvc := service.NewFSService(rootDir)
+	filesH := handler.NewFilesHandler(fsSvc)
+	uploadH := handler.NewUploadHandler(fsSvc)
+	archiveH := handler.NewArchiveHandler(fsSvc)
 
 	app := fiber.New(fiber.Config{
-		AppName:      "XP-Panel filemanager " + version,
-		ReadTimeout:  15 * time.Second,
-		WriteTimeout: 15 * time.Second,
+		AppName:      "XP-Panel File Manager",
+		ReadTimeout:  30 * time.Second,
+		WriteTimeout: 120 * time.Second,
+		BodyLimit:    500 * 1024 * 1024, // 500MB upload limit
 	})
 	app.Use(recover.New())
 	app.Use(logger.New())
 
 	app.Get("/health", func(c *fiber.Ctx) error {
-		return c.JSON(fiber.Map{"status": "ok", "service": "filemanager", "version": version})
+		return c.JSON(fiber.Map{"status": "ok", "service": "filemanager"})
 	})
 
-	// TODO: implement filemanager routes (Phase 2+)
-	app.All("/*", func(c *fiber.Ctx) error {
-		return c.Status(fiber.StatusNotImplemented).JSON(fiber.Map{
-			"error": fiber.Map{
-				"message": "filemanager service not yet implemented",
-				"service": "filemanager",
-			},
-		})
-	})
+	api := app.Group("/api/v1")
+	files := api.Group("/files")
 
-	log.Printf("filemanager service listening on :%s", port)
+	// File operations
+	files.Get("/list", filesH.List)
+	files.Get("/read", filesH.Read)
+	files.Put("/write", filesH.Write)
+	files.Delete("/delete", filesH.Delete)
+	files.Post("/mkdir", filesH.MkDir)
+	files.Post("/copy", filesH.Copy)
+	files.Post("/move", filesH.Move)
+	files.Post("/rename", filesH.Rename)
+	files.Get("/download", filesH.Download)
+
+	// Upload
+	files.Post("/upload", uploadH.Upload)
+
+	// Archive
+	files.Post("/compress", archiveH.Compress)
+	files.Post("/extract", archiveH.Extract)
+
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		<-quit
+		_ = app.ShutdownWithTimeout(5 * time.Second)
+	}()
+
+	log.Printf("filemanager service listening on :%s (root: %s)", port, rootDir)
 	if err := app.Listen(":" + port); err != nil {
-		log.Fatalf("server error: %v", err)
+		log.Fatalf("listen: %v", err)
 	}
+}
+
+func env(key, fallback string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return fallback
 }

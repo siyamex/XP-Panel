@@ -1,6 +1,12 @@
-import type { Metadata } from "next";
+import { FileExplorer } from '@/components/files/FileExplorer'
 
-export const metadata: Metadata = { title: "File Manager" };
+export default function FilesPage() {
+  return (
+    <div className="h-[calc(100vh-3.5rem)] p-4">
+      <FileExplorer />
+    </div>
+  )
+}
 
 export default function FileManagerPage() {
   return (

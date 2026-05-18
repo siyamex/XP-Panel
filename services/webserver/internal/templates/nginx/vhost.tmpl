@@ -1,0 +1,81 @@
+server {
+    listen 80;
+    server_name {{ .Domain }}{{ range .Aliases }} {{ . }}{{ end }};
+    root {{ .DocumentRoot }};
+    index index.php index.html index.htm;
+
+    access_log /var/log/nginx/{{ .Domain }}.access.log;
+    error_log /var/log/nginx/{{ .Domain }}.error.log;
+
+    client_max_body_size 100m;
+
+    location / {
+        try_files $uri $uri/ /index.php?$query_string;
+    }
+
+    {{ if .PHPVersion }}
+    location ~ \.php$ {
+        fastcgi_pass unix:/run/php/php{{ .PHPVersion }}-fpm-{{ .Domain }}.sock;
+        fastcgi_index index.php;
+        fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
+        include fastcgi_params;
+        fastcgi_read_timeout 300;
+    }
+    {{ end }}
+
+    location ~ /\.ht {
+        deny all;
+    }
+
+    location ~ /\.(?!well-known) {
+        deny all;
+    }
+
+    {{ if .CustomConfig }}
+    {{ .CustomConfig }}
+    {{ end }}
+}
+{{ if .SSLEnabled }}
+server {
+    listen 443 ssl http2;
+    server_name {{ .Domain }}{{ range .Aliases }} {{ . }}{{ end }};
+    root {{ .DocumentRoot }};
+    index index.php index.html index.htm;
+
+    ssl_certificate {{ .SSLCertPath }};
+    ssl_certificate_key {{ .SSLKeyPath }};
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384;
+    ssl_prefer_server_ciphers off;
+    ssl_session_cache shared:SSL:10m;
+    ssl_session_timeout 1d;
+    add_header Strict-Transport-Security "max-age=63072000" always;
+
+    access_log /var/log/nginx/{{ .Domain }}.ssl.access.log;
+    error_log /var/log/nginx/{{ .Domain }}.ssl.error.log;
+
+    client_max_body_size 100m;
+
+    location / {
+        try_files $uri $uri/ /index.php?$query_string;
+    }
+
+    {{ if .PHPVersion }}
+    location ~ \.php$ {
+        fastcgi_pass unix:/run/php/php{{ .PHPVersion }}-fpm-{{ .Domain }}.sock;
+        fastcgi_index index.php;
+        fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
+        include fastcgi_params;
+        fastcgi_read_timeout 300;
+    }
+    {{ end }}
+
+    location ~ /\.ht {
+        deny all;
+    }
+
+    {{ if .CustomConfig }}
+    {{ .CustomConfig }}
+    {{ end }}
+}
+{{ end }}
