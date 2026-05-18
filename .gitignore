@@ -1,0 +1,82 @@
+# ─── Node / Frontend ───────────────────────────────────────────
+node_modules/
+.next/
+.turbo/
+dist/
+build/
+out/
+*.tsbuildinfo
+.pnpm-store/
+.cache/
+
+# ─── Go / Backend ──────────────────────────────────────────────
+bin/
+*.exe
+*.test
+*.out
+coverage.out
+vendor/
+
+# ─── Environment & Secrets ─────────────────────────────────────
+.env
+.env.local
+.env.*.local
+.env.production
+*.pem
+*.key
+*.crt
+secrets/
+vault-data/
+
+# ─── Docker ────────────────────────────────────────────────────
+docker-compose.override.yml
+
+# ─── Database ──────────────────────────────────────────────────
+*.db
+*.sqlite
+*.sqlite3
+pgdata/
+redisdata/
+chdata/
+miniodata/
+
+# ─── IDE / Editor ──────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# ─── Logs ──────────────────────────────────────────────────────
+*.log
+logs/
+
+# ─── Generated files ───────────────────────────────────────────
+apps/web/src/lib/api/generated/
+services/*/internal/repository/db.go
+services/*/internal/repository/models.go
+services/*/internal/repository/query.sql.go
+services/gateway/internal/graphql/generated.go
+
+# ─── Terraform ─────────────────────────────────────────────────
+infrastructure/terraform/**/.terraform/
+infrastructure/terraform/**/*.tfstate
+infrastructure/terraform/**/*.tfstate.backup
+infrastructure/terraform/**/.terraform.lock.hcl
+infrastructure/terraform/**/terraform.tfvars
+
+# ─── Kubernetes ────────────────────────────────────────────────
+infrastructure/kubernetes/overlays/production/secrets*.yaml
+
+# ─── Air (Go hot reload) ───────────────────────────────────────
+tmp/
+
+# ─── Uploads / User data ───────────────────────────────────────
+uploads/
+backups/
+
+# ─── Test artifacts ────────────────────────────────────────────
+test-results/
+playwright-report/
