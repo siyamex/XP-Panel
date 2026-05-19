@@ -10,7 +10,7 @@ import (
 	"github.com/gofiber/fiber/v2/middleware/logger"
 	"github.com/gofiber/fiber/v2/middleware/recover"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/xpanel/marketplace/internal/handler"
+	"github.com/xpanel/docker/internal/handler"
 )
 
 var version = "dev"
@@ -18,7 +18,7 @@ var version = "dev"
 func main() {
 	port := os.Getenv("PORT")
 	if port == "" {
-		port = "8092"
+		port = "8095"
 	}
 
 	dbURL := os.Getenv("DATABASE_URL")
@@ -37,7 +37,7 @@ func main() {
 	h := handler.New(db)
 
 	app := fiber.New(fiber.Config{
-		AppName:      "XP-Panel marketplace " + version,
+		AppName:      "XP-Panel docker " + version,
 		ReadTimeout:  30 * time.Second,
 		WriteTimeout: 60 * time.Second,
 	})
@@ -45,17 +45,30 @@ func main() {
 	app.Use(logger.New())
 
 	app.Get("/health", func(c *fiber.Ctx) error {
-		return c.JSON(fiber.Map{"status": "ok", "service": "marketplace", "version": version})
+		return c.JSON(fiber.Map{"status": "ok", "service": "docker", "version": version})
 	})
 
-	api := app.Group("/api/v1/marketplace")
-	api.Get("/apps", h.ListApps)
-	api.Get("/apps/:slug", h.GetApp)
-	api.Post("/install", h.InstallApp)
-	api.Get("/installations", h.ListInstallations)
-	api.Delete("/installations/:id", h.UninstallApp)
+	api := app.Group("/api/v1")
 
-	log.Printf("marketplace service listening on :%s", port)
+	containers := api.Group("/docker/containers")
+	containers.Get("/", h.ListContainers)
+	containers.Post("/", h.CreateContainer)
+	containers.Post("/:id/:action", h.ContainerAction)
+	containers.Delete("/:id", h.DeleteContainer)
+	containers.Get("/:id/logs", h.GetContainerLogs)
+
+	images := api.Group("/docker/images")
+	images.Get("/", h.ListImages)
+	images.Post("/pull", h.PullImage)
+	images.Delete("/:id", h.RemoveImage)
+
+	compose := api.Group("/docker/compose")
+	compose.Get("/", h.ListComposeProjects)
+	compose.Post("/", h.CreateComposeProject)
+	compose.Post("/:id/:action", h.ComposeAction)
+	compose.Delete("/:id", h.DeleteComposeProject)
+
+	log.Printf("docker service listening on :%s", port)
 	if err := app.Listen(":" + port); err != nil {
 		log.Fatalf("server error: %v", err)
 	}

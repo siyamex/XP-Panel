@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"log"
 	"os"
 	"time"
@@ -8,6 +9,8 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/logger"
 	"github.com/gofiber/fiber/v2/middleware/recover"
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/xpanel/devops/internal/handler"
 )
 
 var version = "dev"
@@ -15,13 +18,28 @@ var version = "dev"
 func main() {
 	port := os.Getenv("PORT")
 	if port == "" {
-		port = "8080"
+		port = "8093"
 	}
+
+	dbURL := os.Getenv("DATABASE_URL")
+	if dbURL == "" {
+		dbURL = "postgres://xppanel:devpassword@localhost:5432/xppanel"
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	db, err := pgxpool.New(ctx, dbURL)
+	if err != nil {
+		log.Fatalf("db connect: %v", err)
+	}
+	defer db.Close()
+
+	h := handler.New(db)
 
 	app := fiber.New(fiber.Config{
 		AppName:      "XP-Panel devops " + version,
-		ReadTimeout:  15 * time.Second,
-		WriteTimeout: 15 * time.Second,
+		ReadTimeout:  30 * time.Second,
+		WriteTimeout: 30 * time.Second,
 	})
 	app.Use(recover.New())
 	app.Use(logger.New())
@@ -30,15 +48,18 @@ func main() {
 		return c.JSON(fiber.Map{"status": "ok", "service": "devops", "version": version})
 	})
 
-	// TODO: implement devops routes (Phase 2+)
-	app.All("/*", func(c *fiber.Ctx) error {
-		return c.Status(fiber.StatusNotImplemented).JSON(fiber.Map{
-			"error": fiber.Map{
-				"message": "devops service not yet implemented",
-				"service": "devops",
-			},
-		})
-	})
+	api := app.Group("/api/v1")
+
+	pipelines := api.Group("/devops/pipelines")
+	pipelines.Get("/", h.ListPipelines)
+	pipelines.Post("/", h.CreatePipeline)
+	pipelines.Get("/:id", h.GetPipeline)
+	pipelines.Put("/:id", h.UpdatePipeline)
+	pipelines.Delete("/:id", h.DeletePipeline)
+	pipelines.Post("/:id/run", h.TriggerRun)
+	pipelines.Get("/:id/runs", h.ListRuns)
+
+	api.Get("/devops/deployments", h.ListDeployments)
 
 	log.Printf("devops service listening on :%s", port)
 	if err := app.Listen(":" + port); err != nil {

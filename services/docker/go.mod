@@ -1,4 +1,4 @@
-module github.com/xpanel/devops
+module github.com/xpanel/docker
 
 go 1.23
 
