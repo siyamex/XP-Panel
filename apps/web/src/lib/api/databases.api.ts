@@ -11,12 +11,12 @@ export const databasesApi = {
   delete: (id: string) =>
     api.delete(`/databases/${id}`),
 
-  listUsers: (dbId: string) =>
-    api.get<{ users: DBUser[] }>(`/databases/${dbId}/users`),
+  listUsers: () =>
+    api.get<{ users: DBUser[] }>('/database-users'),
 
-  createUser: (dbId: string, data: CreateDBUserRequest) =>
-    api.post<DBUser>(`/databases/${dbId}/users`, data),
+  createUser: (data: CreateDBUserRequest & { database_id?: string }) =>
+    api.post<DBUser>('/database-users', data),
 
-  deleteUser: (dbId: string, userId: string) =>
-    api.delete(`/databases/${dbId}/users/${userId}`),
+  deleteUser: (id: string) =>
+    api.delete(`/database-users/${id}`),
 }
