@@ -37,6 +37,15 @@ export interface DKIMKey {
   updated_at: string
 }
 
+export interface CatchAll {
+  id: string
+  organization_id: string
+  domain: string
+  destination: string
+  enabled: boolean
+  created_at: string
+}
+
 export interface CreateMailboxRequest {
   local_part: string
   domain: string
@@ -45,9 +54,8 @@ export interface CreateMailboxRequest {
 }
 
 export interface UpdateMailboxRequest {
-  password?: string
   quota_mb?: number
-  active?: boolean
+  enabled?: boolean
 }
 
 export interface CreateForwarderRequest {
@@ -60,4 +68,10 @@ export interface GenerateDKIMRequest {
   domain: string
   selector?: string
   key_size?: number
+}
+
+export interface SetCatchAllRequest {
+  domain: string
+  destination: string
+  enabled?: boolean
 }

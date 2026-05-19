@@ -21,9 +21,9 @@ const generateData = () => {
 
 const data = generateData();
 
-export function MetricsChart() {
+export function MetricsChart({ compact }: { compact?: boolean }) {
   return (
-    <ResponsiveContainer width="100%" height={220}>
+    <ResponsiveContainer width="100%" height={compact ? 140 : 220}>
       <AreaChart data={data} margin={{ top: 5, right: 5, left: -20, bottom: 0 }}>
         <defs>
           <linearGradient id="cpuGrad" x1="0" y1="0" x2="0" y2="1">
@@ -64,11 +64,7 @@ export function MetricsChart() {
           }}
           itemStyle={{ color: "hsl(var(--foreground))" }}
         />
-        <Legend
-          wrapperStyle={{ fontSize: "12px", paddingTop: "8px" }}
-          iconType="circle"
-          iconSize={8}
-        />
+        {!compact && <Legend wrapperStyle={{ fontSize: "12px", paddingTop: "8px" }} iconType="circle" iconSize={8} />}
         <Area
           type="monotone"
           dataKey="cpu"

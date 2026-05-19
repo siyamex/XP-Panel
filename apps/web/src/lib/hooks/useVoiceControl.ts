@@ -20,7 +20,8 @@ export function useVoiceControl(options: UseVoiceControlOptions = {}) {
   const [isSupported, setIsSupported] = useState(false)
   const [transcript, setTranscript] = useState('')
   const [error, setError] = useState<string | null>(null)
-  const recognitionRef = useRef<SpeechRecognition | null>(null)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const recognitionRef = useRef<any>(null)
 
   const commands: VoiceCommand[] = [
     { pattern: /go to dashboard/i, action: () => router.push('/dashboard'), description: 'Navigate to Dashboard' },
@@ -65,7 +66,8 @@ export function useVoiceControl(options: UseVoiceControlOptions = {}) {
   const startListening = useCallback(() => {
     if (!isSupported) { setError('Speech recognition not supported'); return }
 
-    const SpeechRecognitionAPI = window.SpeechRecognition || window.webkitSpeechRecognition
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const SpeechRecognitionAPI = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
     const recognition = new SpeechRecognitionAPI()
     recognitionRef.current = recognition
 
@@ -75,8 +77,10 @@ export function useVoiceControl(options: UseVoiceControlOptions = {}) {
 
     recognition.onstart = () => { setIsListening(true); setError(null); setTranscript('') }
     recognition.onend = () => setIsListening(false)
-    recognition.onerror = (e) => { setError(e.error); setIsListening(false) }
-    recognition.onresult = (e) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    recognition.onerror = (e: any) => { setError(e.error); setIsListening(false) }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    recognition.onresult = (e: any) => {
       const last = e.results[e.results.length - 1]
       const text = last[0].transcript
       setTranscript(text)

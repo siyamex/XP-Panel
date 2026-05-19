@@ -95,7 +95,7 @@ export default function ForwardersPage() {
 function AddForwarderModal({ onClose }: { onClose: () => void }) {
   const qc = useQueryClient()
   const [destinations, setDestinations] = useState('')
-  const { register, handleSubmit } = useForm<{ source: string }>()
+  const { register, handleSubmit } = useForm<{ source_local: string; source_domain: string }>()
 
   const mutation = useMutation({
     mutationFn: (data: CreateForwarderRequest) => mailApi.createForwarder(data),
@@ -103,9 +103,9 @@ function AddForwarderModal({ onClose }: { onClose: () => void }) {
     onError: () => toast.error('Failed to create forwarder'),
   })
 
-  const onSubmit = (d: { source: string }) => {
+  const onSubmit = (d: { source_local: string; source_domain: string }) => {
     const dest = destinations.split(/[\n,]+/).map((s) => s.trim()).filter(Boolean)
-    mutation.mutate({ source: d.source, destinations: dest })
+    mutation.mutate({ source_local: d.source_local, source_domain: d.source_domain, destinations: dest })
   }
 
   return (
@@ -113,9 +113,15 @@ function AddForwarderModal({ onClose }: { onClose: () => void }) {
       <motion.div initial={{ scale: 0.95 }} animate={{ scale: 1 }} exit={{ scale: 0.95 }} className="bg-card border border-border rounded-xl shadow-2xl w-full max-w-md">
         <div className="p-4 border-b border-border"><h2 className="font-semibold">Add Email Forwarder</h2></div>
         <form onSubmit={handleSubmit(onSubmit)} className="p-4 space-y-4">
-          <div>
-            <label className="block text-xs font-medium text-muted-foreground mb-1">Source Address</label>
-            <input {...register('source', { required: true })} placeholder="info@example.com" className="w-full h-9 px-3 rounded-md border border-border bg-background text-sm focus:outline-none focus:ring-1 focus:ring-primary" />
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-muted-foreground mb-1">From (local)</label>
+              <input {...register('source_local', { required: true })} placeholder="info" className="w-full h-9 px-3 rounded-md border border-border bg-background text-sm focus:outline-none focus:ring-1 focus:ring-primary" />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-muted-foreground mb-1">Domain</label>
+              <input {...register('source_domain', { required: true })} placeholder="example.com" className="w-full h-9 px-3 rounded-md border border-border bg-background text-sm focus:outline-none focus:ring-1 focus:ring-primary" />
+            </div>
           </div>
           <div>
             <label className="block text-xs font-medium text-muted-foreground mb-1">Destinations (one per line or comma-separated)</label>

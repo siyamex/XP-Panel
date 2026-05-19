@@ -27,7 +27,7 @@ export default function DKIMPage() {
   })
 
   const regenMutation = useMutation({
-    mutationFn: (domain: string) => mailApi.generateDKIM(domain),
+    mutationFn: (domain: string) => mailApi.generateDKIM({ domain }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['dkim'] }); toast.success('DKIM key regenerated') },
     onError: () => toast.error('Failed to regenerate DKIM key'),
   })
@@ -127,7 +127,7 @@ function GenerateDKIMModal({ onClose }: { onClose: () => void }) {
   const { register, handleSubmit } = useForm<{ domain: string }>()
 
   const mutation = useMutation({
-    mutationFn: (d: { domain: string }) => mailApi.generateDKIM(d.domain),
+    mutationFn: (d: { domain: string }) => mailApi.generateDKIM(d),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['dkim'] }); toast.success('DKIM key generated'); onClose() },
     onError: () => toast.error('Failed to generate DKIM key'),
   })

@@ -1,8 +1,8 @@
 import { api } from './client'
 import type {
-  Mailbox, Forwarder, DKIMKey,
+  Mailbox, Forwarder, DKIMKey, CatchAll,
   CreateMailboxRequest, UpdateMailboxRequest,
-  CreateForwarderRequest, GenerateDKIMRequest,
+  CreateForwarderRequest, SetCatchAllRequest,
 } from '@/types/mail.types'
 
 export const mailApi = {
@@ -13,7 +13,16 @@ export const mailApi = {
     api.post<Mailbox>('/mail/mailboxes', data),
 
   updateMailbox: (id: string, data: UpdateMailboxRequest) =>
-    api.put<Mailbox>(`/mail/mailboxes/${id}`, data),
+    api.patch<Mailbox>(`/mail/mailboxes/${id}`, data),
+
+  changePassword: (id: string, password: string) =>
+    api.put<{ success: boolean }>(`/mail/mailboxes/${id}/password`, { password }),
+
+  suspendMailbox: (id: string) =>
+    api.put<{ success: boolean }>(`/mail/mailboxes/${id}/suspend`, {}),
+
+  unsuspendMailbox: (id: string) =>
+    api.put<{ success: boolean }>(`/mail/mailboxes/${id}/unsuspend`, {}),
 
   deleteMailbox: (id: string) =>
     api.delete(`/mail/mailboxes/${id}`),
@@ -33,9 +42,18 @@ export const mailApi = {
   getDKIM: (domain: string) =>
     api.get<DKIMKey>(`/mail/dkim/${domain}`),
 
-  generateDKIM: (domain: string) =>
-    api.post<DKIMKey>('/mail/dkim/generate', { domain }),
+  generateDKIM: (data: { domain: string; selector?: string; key_size?: number }) =>
+    api.post<DKIMKey>('/mail/dkim', data),
 
   deleteDKIM: (domain: string) =>
     api.delete(`/mail/dkim/${domain}`),
+
+  getCatchAll: (domain?: string) =>
+    api.get<{ catch_all: CatchAll | null }>(`/mail/catchall${domain ? `?domain=${encodeURIComponent(domain)}` : ''}`),
+
+  setCatchAll: (data: SetCatchAllRequest) =>
+    api.post<CatchAll>('/mail/catchall', data),
+
+  deleteCatchAll: (domain: string) =>
+    api.delete(`/mail/catchall?domain=${encodeURIComponent(domain)}`),
 }

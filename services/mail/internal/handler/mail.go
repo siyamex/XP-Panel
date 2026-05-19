@@ -1,4 +1,4 @@
-﻿package handler
+package handler
 
 import (
 	"crypto/rand"
@@ -7,6 +7,7 @@ import (
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"encoding/pem"
 	"strings"
 	"time"
@@ -32,6 +33,8 @@ type Mailbox struct {
 	CreatedAt      time.Time `json:"created_at"`
 }
 
+// ── Mailboxes ──────────────────────────────────────────────────────────────────
+
 func (h *Handler) ListMailboxes(c *fiber.Ctx) error {
 	orgID, err := uuid.Parse(c.Get("X-Org-ID"))
 	if err != nil { return fiber.ErrUnauthorized }
@@ -56,11 +59,11 @@ func (h *Handler) CreateMailbox(c *fiber.Ctx) error {
 	orgID, err := uuid.Parse(c.Get("X-Org-ID"))
 	if err != nil { return fiber.ErrUnauthorized }
 	var body struct {
-		Domain     string `json:"domain"`
-		Username   string `json:"username"`
-		LocalPart  string `json:"local_part"`
-		Password   string `json:"password"`
-		QuotaMB    int    `json:"quota_mb"`
+		Domain    string `json:"domain"`
+		Username  string `json:"username"`
+		LocalPart string `json:"local_part"`
+		Password  string `json:"password"`
+		QuotaMB   int    `json:"quota_mb"`
 	}
 	if err := c.BodyParser(&body); err != nil { return fiber.ErrBadRequest }
 	if body.Username == "" { body.Username = body.LocalPart }
@@ -78,7 +81,7 @@ func (h *Handler) CreateMailbox(c *fiber.Ctx) error {
 		if strings.Contains(err.Error(), "unique") { return fiber.NewError(409, "mailbox already exists") }
 		return fiber.NewError(500, err.Error())
 	}
-	return c.Status(201).JSON(fiber.Map{"id": id, "email": email, "quota_mb": body.QuotaMB})
+	return c.Status(201).JSON(fiber.Map{"id": id, "email": email, "quota_mb": body.QuotaMB, "enabled": true})
 }
 
 func (h *Handler) DeleteMailbox(c *fiber.Ctx) error {
@@ -97,13 +100,120 @@ func (h *Handler) ChangePassword(c *fiber.Ctx) error {
 	if err != nil { return fiber.ErrBadRequest }
 	var body struct{ Password string `json:"password"` }
 	if err := c.BodyParser(&body); err != nil { return fiber.ErrBadRequest }
+	if body.Password == "" { return fiber.NewError(400, "password is required") }
 	ct, err := h.db.Exec(c.Context(),
 		`UPDATE mailboxes SET password_hash=$1, updated_at=NOW() WHERE id=$2 AND organization_id=$3`,
 		hashPassword(body.Password), id, orgID)
 	if err != nil { return fiber.NewError(500, err.Error()) }
 	if ct.RowsAffected() == 0 { return fiber.ErrNotFound }
-	return c.JSON(fiber.Map{"message": "password updated"})
+	return c.JSON(fiber.Map{"success": true})
 }
+
+func (h *Handler) UpdateMailbox(c *fiber.Ctx) error {
+	orgID, _ := uuid.Parse(c.Get("X-Org-ID"))
+	id, err := uuid.Parse(c.Params("id"))
+	if err != nil { return fiber.ErrBadRequest }
+	var body struct {
+		QuotaMB *int  `json:"quota_mb"`
+		Enabled *bool `json:"enabled"`
+	}
+	if err := c.BodyParser(&body); err != nil { return fiber.ErrBadRequest }
+
+	if body.QuotaMB != nil {
+		if _, err := h.db.Exec(c.Context(),
+			`UPDATE mailboxes SET quota_mb=$1, updated_at=NOW() WHERE id=$2 AND organization_id=$3`,
+			*body.QuotaMB, id, orgID); err != nil {
+			return fiber.NewError(500, err.Error())
+		}
+	}
+	if body.Enabled != nil {
+		if _, err := h.db.Exec(c.Context(),
+			`UPDATE mailboxes SET enabled=$1, updated_at=NOW() WHERE id=$2 AND organization_id=$3`,
+			*body.Enabled, id, orgID); err != nil {
+			return fiber.NewError(500, err.Error())
+		}
+	}
+	return c.JSON(fiber.Map{"success": true})
+}
+
+func (h *Handler) SuspendMailbox(c *fiber.Ctx) error {
+	orgID, _ := uuid.Parse(c.Get("X-Org-ID"))
+	id, err := uuid.Parse(c.Params("id"))
+	if err != nil { return fiber.ErrBadRequest }
+	ct, err := h.db.Exec(c.Context(),
+		`UPDATE mailboxes SET enabled=false, updated_at=NOW() WHERE id=$1 AND organization_id=$2`, id, orgID)
+	if err != nil { return fiber.NewError(500, err.Error()) }
+	if ct.RowsAffected() == 0 { return fiber.ErrNotFound }
+	return c.JSON(fiber.Map{"success": true, "enabled": false})
+}
+
+func (h *Handler) UnsuspendMailbox(c *fiber.Ctx) error {
+	orgID, _ := uuid.Parse(c.Get("X-Org-ID"))
+	id, err := uuid.Parse(c.Params("id"))
+	if err != nil { return fiber.ErrBadRequest }
+	ct, err := h.db.Exec(c.Context(),
+		`UPDATE mailboxes SET enabled=true, updated_at=NOW() WHERE id=$1 AND organization_id=$2`, id, orgID)
+	if err != nil { return fiber.NewError(500, err.Error()) }
+	if ct.RowsAffected() == 0 { return fiber.ErrNotFound }
+	return c.JSON(fiber.Map{"success": true, "enabled": true})
+}
+
+// ── Catch-all ─────────────────────────────────────────────────────────────────
+
+type CatchAll struct {
+	ID             uuid.UUID `json:"id"`
+	OrganizationID uuid.UUID `json:"organization_id"`
+	Domain         string    `json:"domain"`
+	Destination    string    `json:"destination"`
+	Enabled        bool      `json:"enabled"`
+	CreatedAt      time.Time `json:"created_at"`
+}
+
+func (h *Handler) GetCatchAll(c *fiber.Ctx) error {
+	orgID, err := uuid.Parse(c.Get("X-Org-ID"))
+	if err != nil { return fiber.ErrUnauthorized }
+	domain := c.Params("domain")
+	var ca CatchAll
+	err = h.db.QueryRow(c.Context(),
+		`SELECT id, organization_id, domain, destination, enabled, created_at
+		 FROM catch_all_addresses WHERE organization_id=$1 AND domain=$2`,
+		orgID, domain).Scan(&ca.ID, &ca.OrganizationID, &ca.Domain, &ca.Destination, &ca.Enabled, &ca.CreatedAt)
+	if err != nil { return fiber.ErrNotFound }
+	return c.JSON(ca)
+}
+
+func (h *Handler) SetCatchAll(c *fiber.Ctx) error {
+	orgID, err := uuid.Parse(c.Get("X-Org-ID"))
+	if err != nil { return fiber.ErrUnauthorized }
+	var body struct {
+		Domain      string `json:"domain"`
+		Destination string `json:"destination"`
+		Enabled     bool   `json:"enabled"`
+	}
+	if err := c.BodyParser(&body); err != nil { return fiber.ErrBadRequest }
+	if body.Domain == "" || body.Destination == "" {
+		return fiber.NewError(400, "domain and destination are required")
+	}
+	id := uuid.New()
+	_, err = h.db.Exec(c.Context(),
+		`INSERT INTO catch_all_addresses (id, organization_id, domain, destination, enabled)
+		 VALUES ($1,$2,$3,$4,$5)
+		 ON CONFLICT (organization_id, domain)
+		 DO UPDATE SET destination=$4, enabled=$5, updated_at=NOW()`,
+		id, orgID, body.Domain, body.Destination, body.Enabled)
+	if err != nil { return fiber.NewError(500, err.Error()) }
+	return c.JSON(fiber.Map{"success": true, "domain": body.Domain, "destination": body.Destination})
+}
+
+func (h *Handler) DeleteCatchAll(c *fiber.Ctx) error {
+	orgID, _ := uuid.Parse(c.Get("X-Org-ID"))
+	domain := c.Params("domain")
+	h.db.Exec(c.Context(),
+		`DELETE FROM catch_all_addresses WHERE organization_id=$1 AND domain=$2`, orgID, domain)
+	return c.JSON(fiber.Map{"success": true})
+}
+
+// ── Forwarders ────────────────────────────────────────────────────────────────
 
 type Forwarder struct {
 	ID             uuid.UUID `json:"id"`
@@ -127,9 +237,12 @@ func (h *Handler) ListForwarders(c *fiber.Ctx) error {
 	list := []Forwarder{}
 	for rows.Next() {
 		var f Forwarder
-		if err := rows.Scan(&f.ID, &f.OrganizationID, &f.SourceLocal, &f.SourceDomain, &f.Destinations, &f.Enabled, &f.CreatedAt); err != nil {
+		var destsJSON []byte
+		if err := rows.Scan(&f.ID, &f.OrganizationID, &f.SourceLocal, &f.SourceDomain, &destsJSON, &f.Enabled, &f.CreatedAt); err != nil {
 			return fiber.NewError(500, err.Error())
 		}
+		_ = json.Unmarshal(destsJSON, &f.Destinations)
+		if f.Destinations == nil { f.Destinations = []string{} }
 		f.Source = f.SourceLocal + "@" + f.SourceDomain
 		list = append(list, f)
 	}
@@ -149,10 +262,11 @@ func (h *Handler) CreateForwarder(c *fiber.Ctx) error {
 	}
 	parts := strings.SplitN(strings.ToLower(body.Source), "@", 2)
 	if len(parts) != 2 { return fiber.NewError(400, "source must be a valid email address") }
+	destsJSON, _ := json.Marshal(body.Destinations)
 	id := uuid.New()
 	_, err = h.db.Exec(c.Context(),
 		`INSERT INTO email_forwarders (id, organization_id, source_local, source_domain, destinations) VALUES ($1,$2,$3,$4,$5)`,
-		id, orgID, parts[0], parts[1], body.Destinations)
+		id, orgID, parts[0], parts[1], destsJSON)
 	if err != nil {
 		if strings.Contains(err.Error(), "unique") { return fiber.NewError(409, "forwarder already exists") }
 		return fiber.NewError(500, err.Error())
@@ -169,6 +283,33 @@ func (h *Handler) DeleteForwarder(c *fiber.Ctx) error {
 	if err != nil { return fiber.NewError(500, err.Error()) }
 	if ct.RowsAffected() == 0 { return fiber.ErrNotFound }
 	return c.SendStatus(204)
+}
+
+// ── DKIM ─────────────────────────────────────────────────────────────────────
+
+func (h *Handler) ListDKIM(c *fiber.Ctx) error {
+	orgID, err := uuid.Parse(c.Get("X-Org-ID"))
+	if err != nil { return fiber.ErrUnauthorized }
+	rows, err := h.db.Query(c.Context(),
+		`SELECT id, domain, selector, dns_txt_value, active FROM dkim_keys WHERE organization_id=$1 ORDER BY domain`, orgID)
+	if err != nil { return fiber.NewError(500, err.Error()) }
+	defer rows.Close()
+	type row struct {
+		ID        uuid.UUID `json:"id"`
+		Domain    string    `json:"domain"`
+		Selector  string    `json:"selector"`
+		DNSRecord string    `json:"dns_record"`
+		DNSName   string    `json:"dns_name"`
+		Active    bool      `json:"active"`
+	}
+	list := []row{}
+	for rows.Next() {
+		var r row
+		if err := rows.Scan(&r.ID, &r.Domain, &r.Selector, &r.DNSRecord, &r.Active); err != nil { continue }
+		r.DNSName = r.Selector + "._domainkey." + r.Domain
+		list = append(list, r)
+	}
+	return c.JSON(fiber.Map{"keys": list})
 }
 
 func (h *Handler) GenerateDKIM(c *fiber.Ctx) error {
@@ -198,6 +339,7 @@ func (h *Handler) GenerateDKIM(c *fiber.Ctx) error {
 		"id": id, "domain": body.Domain, "selector": body.Selector,
 		"dns_name":   body.Selector + "._domainkey." + body.Domain,
 		"dns_record": dnsTxtValue,
+		"active":     true,
 	})
 }
 
@@ -214,9 +356,16 @@ func (h *Handler) GetDKIM(c *fiber.Ctx) error {
 	if err != nil { return fiber.ErrNotFound }
 	return c.JSON(fiber.Map{
 		"id": id, "domain": domain, "selector": selector,
-		"dns_name": selector + "._domainkey." + domain,
-		"dns_record": dnsRecord, "enabled": enabled,
+		"dns_name":   selector + "._domainkey." + domain,
+		"dns_record": dnsRecord, "active": enabled,
 	})
+}
+
+func (h *Handler) DeleteDKIM(c *fiber.Ctx) error {
+	orgID, _ := uuid.Parse(c.Get("X-Org-ID"))
+	domain := c.Params("domain")
+	h.db.Exec(c.Context(), `DELETE FROM dkim_keys WHERE domain=$1 AND organization_id=$2`, domain, orgID)
+	return c.JSON(fiber.Map{"success": true})
 }
 
 func hashPassword(pw string) string {
