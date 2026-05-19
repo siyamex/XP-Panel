@@ -48,14 +48,35 @@ export const filesApi = {
   downloadUrl: (path: string) =>
     `${process.env.NEXT_PUBLIC_API_URL}/api/v1/files/download?path=${encodeURIComponent(path)}`,
 
-  upload: (path: string, files: FileList) => {
+  upload: async (path: string, files: FileList): Promise<{ data: { uploaded: Array<{ name: string; error?: string }>; count: string } }> => {
     const form = new FormData()
     form.append('path', path)
     for (let i = 0; i < files.length; i++) form.append('files', files[i])
-    // Do NOT set Content-Type — browser must auto-set it with the multipart boundary
-    return api.post<{ uploaded: Array<{ name: string; error?: string }>; count: string }>(
-      '/files/upload', form, { headers: { 'Content-Type': undefined } }
-    )
+
+    // Use fetch directly — axios default Content-Type header breaks multipart boundary
+    const apiBase = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8080'
+    const headers: HeadersInit = {}
+    if (typeof window !== 'undefined') {
+      try {
+        const stored = localStorage.getItem('xp-auth')
+        if (stored) {
+          const { state } = JSON.parse(stored)
+          if (state?.accessToken) headers['Authorization'] = `Bearer ${state.accessToken}`
+        }
+      } catch { /* ignore */ }
+    }
+
+    const resp = await fetch(`${apiBase}/api/v1/files/upload`, {
+      method: 'POST',
+      headers,
+      body: form,
+    })
+
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({ error: { message: 'Upload failed' } }))
+      throw Object.assign(new Error(err?.error?.message ?? 'Upload failed'), { response: { data: err } })
+    }
+    return { data: await resp.json() }
   },
 
   compress: (paths: string[], output: string, format: 'zip' | 'tar.gz' | 'tar' | 'gz' | 'bz2' = 'zip') =>

@@ -13,10 +13,11 @@ type ServiceProxy struct {
 func New() *ServiceProxy {
 	return &ServiceProxy{
 		client: &fasthttp.Client{
-			MaxConnsPerHost:     512,
-			ReadTimeout:         30e9,  // 30s
-			WriteTimeout:        30e9,
-			MaxIdleConnDuration: 60e9,
+			MaxConnsPerHost:        512,
+			ReadTimeout:            120e9, // 120s for large uploads
+			WriteTimeout:           120e9,
+			MaxIdleConnDuration:    60e9,
+			MaxResponseBodySize:    500 * 1024 * 1024, // 500MB
 		},
 	}
 }

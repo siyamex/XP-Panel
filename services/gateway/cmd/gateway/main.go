@@ -35,9 +35,10 @@ func main() {
 
 	app := fiber.New(fiber.Config{
 		AppName:      "XP-Panel Gateway " + version,
-		ReadTimeout:  30 * time.Second,
-		WriteTimeout: 60 * time.Second,
+		ReadTimeout:  120 * time.Second,
+		WriteTimeout: 120 * time.Second,
 		IdleTimeout:  120 * time.Second,
+		BodyLimit:    500 * 1024 * 1024, // 500MB for file uploads
 		ErrorHandler: errorHandler,
 	})
 
