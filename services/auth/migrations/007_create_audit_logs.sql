@@ -1,6 +1,6 @@
 -- +goose Up
 CREATE TABLE audit_logs (
-  id              UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  id              UUID        NOT NULL DEFAULT gen_random_uuid(),
   organization_id UUID        REFERENCES organizations(id) ON DELETE SET NULL,
   user_id         UUID        REFERENCES users(id) ON DELETE SET NULL,
   action          VARCHAR(100) NOT NULL,
@@ -11,7 +11,8 @@ CREATE TABLE audit_logs (
   old_value       JSONB,
   new_value       JSONB,
   metadata        JSONB       NOT NULL DEFAULT '{}',
-  created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (id, created_at)
 ) PARTITION BY RANGE (created_at);
 
 -- Create partitions for 2026 (add future months via cron/pg_partman)

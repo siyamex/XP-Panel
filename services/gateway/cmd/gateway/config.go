@@ -8,6 +8,7 @@ type Config struct {
 	JWTSecret       string
 	AllowOrigins    string
 	AuthURL         string
+	DomainsURL      string
 	DNSServiceURL   string
 	MailServiceURL  string
 	WebServerURL    string
@@ -30,6 +31,7 @@ func loadConfig() Config {
 		JWTSecret:       getEnv("JWT_SECRET", "dev-jwt-secret-change-in-production"),
 		AllowOrigins:    getEnv("CORS_ORIGINS", "http://localhost:3000"),
 		AuthURL:         getEnv("AUTH_SERVICE_URL", "http://localhost:8081"),
+		DomainsURL:      getEnv("DOMAINS_SERVICE_URL", "http://localhost:8095"),
 		DNSServiceURL:   getEnv("DNS_SERVICE_URL", "http://localhost:8082"),
 		MailServiceURL:  getEnv("MAIL_SERVICE_URL", "http://localhost:8083"),
 		WebServerURL:    getEnv("WEBSERVER_SERVICE_URL", "http://localhost:8084"),

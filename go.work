@@ -3,6 +3,7 @@ go 1.23
 use (
 	./services/gateway
 	./services/auth
+	./services/domains
 	./services/dns
 	./services/mail
 	./services/webserver

@@ -25,7 +25,7 @@ CREATE INDEX idx_servers_status ON servers(status);
 
 CREATE TRIGGER trg_servers_updated_at
   BEFORE UPDATE ON servers
-  FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+  FOR EACH ROW EXECUTE FUNCTION trigger_set_updated_at();
 
 -- +goose Down
 DROP TABLE IF EXISTS servers;

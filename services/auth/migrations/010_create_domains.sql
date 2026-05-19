@@ -26,7 +26,7 @@ CREATE INDEX idx_domains_status ON domains(status);
 
 CREATE TRIGGER trg_domains_updated_at
   BEFORE UPDATE ON domains
-  FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+  FOR EACH ROW EXECUTE FUNCTION trigger_set_updated_at();
 
 -- +goose Down
 DROP TABLE IF EXISTS domains;

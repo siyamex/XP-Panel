@@ -70,17 +70,20 @@ func main() {
 
 	api := app.Group("/api/v1")
 
-	zones := api.Group("/zones")
-	zones.Get("/", zoneH.List)
-	zones.Post("/", zoneH.Create)
-	zones.Get("/:id", zoneH.Get)
-	zones.Delete("/:id", zoneH.Delete)
+	// Mount at both /zones (direct) and /dns/zones (via gateway proxy)
+	for _, prefix := range []string{"/zones", "/dns/zones"} {
+		zones := api.Group(prefix)
+		zones.Get("/", zoneH.List)
+		zones.Post("/", zoneH.Create)
+		zones.Get("/:id", zoneH.Get)
+		zones.Delete("/:id", zoneH.Delete)
+		records := zones.Group("/:zoneId/records")
+		records.Get("/", recordH.List)
+		records.Post("/", recordH.Create)
+		records.Put("/:id", recordH.Update)
+		records.Delete("/:id", recordH.Delete)
+	}
 
-	records := zones.Group("/:zoneId/records")
-	records.Get("/", recordH.List)
-	records.Post("/", recordH.Create)
-	records.Put("/:id", recordH.Update)
-	records.Delete("/:id", recordH.Delete)
 
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)

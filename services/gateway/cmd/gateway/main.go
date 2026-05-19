@@ -87,9 +87,12 @@ func main() {
 	// Mail service
 	authenticated.All("/mail/*", middleware.RequirePerm("mail:read"), prx.To(cfg.MailServiceURL))
 
-	// Domains
-	authenticated.Get("/domains*", middleware.RequirePerm("domains:read"), prx.To(cfg.AuthURL))
-	authenticated.All("/domains*", middleware.RequirePerm("domains:write"), prx.To(cfg.AuthURL))
+	// Domains service
+	authenticated.Get("/domains", middleware.RequirePerm("domains:read"), prx.To(cfg.DomainsURL))
+	authenticated.Get("/domains/*", middleware.RequirePerm("domains:read"), prx.To(cfg.DomainsURL))
+	authenticated.Post("/domains", middleware.RequirePerm("domains:write"), prx.To(cfg.DomainsURL))
+	authenticated.Post("/domains/*", middleware.RequirePerm("domains:write"), prx.To(cfg.DomainsURL))
+	authenticated.Delete("/domains/*", middleware.RequirePerm("domains:delete"), prx.To(cfg.DomainsURL))
 
 	// Web server
 	authenticated.All("/webserver/*", middleware.RequirePerm("domains:write"), prx.To(cfg.WebServerURL))

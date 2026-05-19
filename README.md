@@ -18,6 +18,10 @@
 
 [Documentation](https://docs.xp-panel.io) · [Demo](https://demo.xp-panel.io) · [Report Bug](https://github.com/xp-panel/xp-panel/issues) · [Request Feature](https://github.com/xp-panel/xp-panel/issues)
 
+<br/>
+
+![XP-Panel Dashboard](apps/web/public/screenshot.jpg)
+
 </div>
 
 ---

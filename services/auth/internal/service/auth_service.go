@@ -44,6 +44,7 @@ type UserRepository interface {
 	ResetFailedLogin(ctx context.Context, id uuid.UUID) error
 	UpdateLastLogin(ctx context.Context, id uuid.UUID, ip string) error
 	GetRoles(ctx context.Context, userID uuid.UUID) ([]domain.Role, error)
+	CreateRoleAndAssign(ctx context.Context, orgID, userID uuid.UUID, role domain.Role) error
 }
 
 type OrgRepository interface {
@@ -131,8 +132,18 @@ func (s *AuthService) Register(ctx context.Context, in RegisterInput) (*domain.T
 		return nil, err
 	}
 
-	// Assign admin role to first user in org
-	user.Roles = []domain.Role{{Name: "admin", Permissions: adminPermissions()}}
+	// Create admin role in DB and assign to user
+	adminRole := domain.Role{
+		ID:             uuid.New(),
+		OrganizationID: &org.ID,
+		Name:           "admin",
+		IsSystem:       true,
+		Permissions:    adminPermissions(),
+	}
+	if err := s.users.CreateRoleAndAssign(ctx, org.ID, user.ID, adminRole); err != nil {
+		return nil, err
+	}
+	user.Roles = []domain.Role{adminRole}
 
 	// Link org owner
 	_ = s.orgs.SetOwner(ctx, org.ID, user.ID)

@@ -35,7 +35,10 @@ apiClient.interceptors.response.use(
   async (error: AxiosError) => {
     const original = error.config as InternalAxiosRequestConfig & { _retry?: boolean };
 
-    if (error.response?.status === 401 && !original._retry) {
+    const is403Perms = error.response?.status === 403 &&
+      (error.response?.data as any)?.error?.message?.includes("insufficient permissions");
+
+    if ((error.response?.status === 401 || is403Perms) && !original._retry) {
       if (isRefreshing) {
         return new Promise((resolve) => {
           refreshQueue.push((token) => {
@@ -60,10 +63,25 @@ apiClient.interceptors.response.use(
         });
 
         const newToken = data.data.accessToken;
+        const newRefresh = data.data.refreshToken ?? state.refreshToken;
 
-        // Update store
-        const newState = { ...state, accessToken: newToken };
-        localStorage.setItem("xp-auth", JSON.stringify({ state: newState }));
+        // Decode new JWT to get updated permissions
+        let newUser = state.user;
+        try {
+          const payload = JSON.parse(atob(newToken.split(".")[1]));
+          newUser = {
+            id: payload.sub,
+            email: payload.email,
+            username: payload.username,
+            orgId: payload.org,
+            roles: payload.roles ?? [],
+            permissions: payload.perms ?? [],
+          };
+        } catch {}
+
+        // Update persisted store
+        const newState = { ...state, accessToken: newToken, refreshToken: newRefresh, user: newUser, isAuthenticated: true };
+        localStorage.setItem("xp-auth", JSON.stringify({ state: newState, version: 0 }));
 
         refreshQueue.forEach((cb) => cb(newToken));
         refreshQueue = [];

@@ -23,7 +23,7 @@ CREATE INDEX idx_packages_org ON packages(organization_id);
 
 CREATE TRIGGER trg_packages_updated_at
   BEFORE UPDATE ON packages
-  FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+  FOR EACH ROW EXECUTE FUNCTION trigger_set_updated_at();
 
 -- +goose Down
 DROP TABLE IF EXISTS packages;

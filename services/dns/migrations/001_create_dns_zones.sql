@@ -18,6 +18,7 @@ CREATE TABLE dns_zones (
 CREATE UNIQUE INDEX idx_dns_zones_name ON dns_zones(name);
 CREATE INDEX idx_dns_zones_org ON dns_zones(organization_id);
 
+-- +goose StatementBegin
 CREATE OR REPLACE FUNCTION update_dns_zones_updated_at()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -25,6 +26,7 @@ BEGIN
   RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
+-- +goose StatementEnd
 
 CREATE TRIGGER trg_dns_zones_updated_at
   BEFORE UPDATE ON dns_zones

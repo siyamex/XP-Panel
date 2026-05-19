@@ -21,6 +21,7 @@ CREATE INDEX idx_organizations_slug ON organizations(slug);
 CREATE INDEX idx_organizations_status ON organizations(status);
 
 -- Trigger: auto-update updated_at
+-- +goose StatementBegin
 CREATE OR REPLACE FUNCTION trigger_set_updated_at()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -28,6 +29,7 @@ BEGIN
   RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
+-- +goose StatementEnd
 
 CREATE TRIGGER set_organizations_updated_at
   BEFORE UPDATE ON organizations

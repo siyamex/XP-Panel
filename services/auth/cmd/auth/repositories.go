@@ -6,6 +6,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"time"
 
 	"github.com/google/uuid"
@@ -106,6 +107,25 @@ func (r *pgUserRepo) UpdateLastLogin(ctx context.Context, id uuid.UUID, ip strin
 	return err
 }
 
+func (r *pgUserRepo) CreateRoleAndAssign(ctx context.Context, orgID, userID uuid.UUID, role domain.Role) error {
+	permsJSON, _ := json.Marshal(role.Permissions)
+	_, err := r.db.Exec(ctx,
+		`INSERT INTO roles (id, organization_id, name, is_system, permissions)
+		 VALUES ($1, $2, $3, $4, $5)
+		 ON CONFLICT (organization_id, name) DO UPDATE SET permissions = EXCLUDED.permissions`,
+		role.ID, orgID, role.Name, role.IsSystem, permsJSON)
+	if err != nil {
+		return err
+	}
+	// Fetch actual role ID (in case of conflict)
+	var roleID uuid.UUID
+	_ = r.db.QueryRow(ctx, `SELECT id FROM roles WHERE organization_id=$1 AND name=$2`, orgID, role.Name).Scan(&roleID)
+	_, err = r.db.Exec(ctx,
+		`INSERT INTO user_roles (user_id, role_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+		userID, roleID)
+	return err
+}
+
 func (r *pgUserRepo) GetRoles(ctx context.Context, userID uuid.UUID) ([]domain.Role, error) {
 	rows, err := r.db.Query(ctx,
 		`SELECT r.id, r.organization_id, r.name, r.is_system, r.permissions
@@ -125,6 +145,7 @@ func (r *pgUserRepo) GetRoles(ctx context.Context, userID uuid.UUID) ([]domain.R
 		if err := rows.Scan(&role.ID, &role.OrganizationID, &role.Name, &role.IsSystem, &permsJSON); err != nil {
 			return nil, err
 		}
+		_ = json.Unmarshal(permsJSON, &role.Permissions)
 		roles = append(roles, role)
 	}
 	return roles, nil

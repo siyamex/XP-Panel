@@ -194,7 +194,10 @@ function AddDomainModal({ onClose }: { onClose: () => void }) {
       toast.success('Domain added')
       onClose()
     },
-    onError: () => toast.error('Failed to add domain'),
+    onError: (err: any) => {
+      const msg = err?.response?.data?.error?.message ?? err?.message ?? 'Failed to add domain'
+      toast.error(msg)
+    },
   })
 
   return (

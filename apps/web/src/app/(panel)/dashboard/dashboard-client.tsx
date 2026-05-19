@@ -8,7 +8,7 @@ import {
   CreditCard, Bot, Store, Users, Settings, Zap,
   Map, GitBranch, Bell, Key, BarChart3, Wifi,
   FileText, RefreshCw, Package, Terminal, AlertTriangle,
-  CheckCircle, Clock, TrendingUp,
+  CheckCircle, Clock,
 } from "lucide-react";
 import { MetricsChart } from "@/components/charts/MetricsChart";
 import { getUsageBgColor, formatPercent } from "@/lib/utils/format";
@@ -28,7 +28,7 @@ const appSections = [
     title: "Domains",
     apps: [
       { label: "Domains", icon: Globe, href: "/domains", bg: "from-blue-500 to-blue-600", shadow: "shadow-blue-500/30" },
-      { label: "DNS Zone", icon: Wifi, href: "/dns/default", bg: "from-cyan-500 to-cyan-600", shadow: "shadow-cyan-500/30" },
+      { label: "DNS Zone", icon: Wifi, href: "/dns", bg: "from-cyan-500 to-cyan-600", shadow: "shadow-cyan-500/30" },
       { label: "SSL / TLS", icon: Lock, href: "/ssl", bg: "from-green-500 to-green-600", shadow: "shadow-green-500/30" },
       { label: "Subdomains", icon: Globe, href: "/domains", bg: "from-teal-500 to-teal-600", shadow: "shadow-teal-500/30" },
     ],
@@ -126,20 +126,46 @@ function AppIcon({ app, index }: { app: typeof appSections[0]["apps"][0]; index:
   return (
     <motion.div
       variants={fadeUp}
-      transition={{ delay: index * 0.025 }}
-      whileHover={{ scale: 1.1, y: -3 }}
+      transition={{ delay: index * 0.02 }}
+      whileHover={{ scale: 1.06, y: -2 }}
       whileTap={{ scale: 0.95 }}
-      className="flex"
+      className="w-[110px]"
     >
-      <Link href={app.href} className="flex flex-col items-center gap-2 group w-full">
-        <div className={`w-12 h-12 rounded-xl bg-gradient-to-br ${app.bg} shadow-md ${app.shadow} flex items-center justify-center transition-all duration-200 group-hover:shadow-lg`}>
-          <Icon className="w-6 h-6 text-white drop-shadow-sm" strokeWidth={1.8} />
+      <Link href={app.href} className="flex flex-col items-center gap-2.5 group">
+        <div className={`w-16 h-16 rounded-2xl bg-gradient-to-br ${app.bg} shadow-md ${app.shadow} flex items-center justify-center transition-all duration-200 group-hover:shadow-lg`}>
+          <Icon className="w-8 h-8 text-white drop-shadow-sm" strokeWidth={1.6} />
         </div>
-        <span className="text-[11px] font-medium text-center text-muted-foreground group-hover:text-foreground transition-colors leading-tight w-full">
+        <span className="text-[11.5px] font-medium text-center text-muted-foreground group-hover:text-foreground transition-colors leading-tight w-full px-1">
           {app.label}
         </span>
       </Link>
     </motion.div>
+  );
+}
+
+function QuickAccessPanel() {
+  return (
+    <div className="bg-card border rounded-xl overflow-hidden">
+      {appSections.map((section, si) => (
+        <div key={section.title} className={si !== appSections.length - 1 ? "border-b" : ""}>
+          {/* Section header bar */}
+          <div className="px-5 py-2.5 bg-muted/40 border-b">
+            <p className="text-xs font-bold text-foreground/70 uppercase tracking-widest">
+              {section.title}
+            </p>
+          </div>
+          {/* Icons row */}
+          <motion.div
+            variants={stagger}
+            className="px-6 py-6 flex flex-wrap gap-x-4 gap-y-6"
+          >
+            {section.apps.map((app, ai) => (
+              <AppIcon key={app.label} app={app} index={si * 10 + ai} />
+            ))}
+          </motion.div>
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -205,7 +231,13 @@ export function DashboardClient() {
         </motion.div>
       </div>
 
-      {/* Recent Activity */}
+      {/* App Quick Access — sidebar category + icon grid */}
+      <motion.div variants={fadeUp}>
+        <h2 className="text-base font-semibold mb-3">Quick Access</h2>
+        <QuickAccessPanel />
+      </motion.div>
+
+      {/* Recent Activity — last */}
       <motion.div variants={fadeUp}>
         <div className="bg-card border rounded-xl p-5">
           <div className="flex items-center justify-between mb-4">
@@ -224,32 +256,6 @@ export function DashboardClient() {
               );
             })}
           </div>
-        </div>
-      </motion.div>
-
-      {/* App Icon Grid — cPanel style, below metrics */}
-      <motion.div variants={fadeUp}>
-        <h2 className="text-base font-semibold mb-3">Quick Access</h2>
-        <div className="bg-card border rounded-xl overflow-hidden">
-          {appSections.map((section, si) => (
-            <div key={section.title} className={si !== 0 ? "border-t" : ""}>
-              <div className="px-5 py-2.5 bg-muted/40">
-                <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                  {section.title}
-                </h3>
-              </div>
-              <div className="px-5 py-5">
-                <motion.div
-                  variants={stagger}
-                  className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 lg:grid-cols-10 xl:grid-cols-12 gap-x-4 gap-y-5"
-                >
-                  {section.apps.map((app, ai) => (
-                    <AppIcon key={app.label} app={app} index={si * 10 + ai} />
-                  ))}
-                </motion.div>
-              </div>
-            </div>
-          ))}
         </div>
       </motion.div>
     </motion.div>
