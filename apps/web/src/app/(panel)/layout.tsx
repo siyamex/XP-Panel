@@ -1,4 +1,5 @@
 import { AppShell } from "@/components/layout/AppShell";
+import { VoiceButton } from "@/components/ai/VoiceButton";
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
@@ -13,5 +14,5 @@ export default function PanelLayout({
 }: {
   children: React.ReactNode;
 }) {
-  return <AppShell>{children}</AppShell>;
+  return <AppShell>{children}<VoiceButton /></AppShell>;
 }
