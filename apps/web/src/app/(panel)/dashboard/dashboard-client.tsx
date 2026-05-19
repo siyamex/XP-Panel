@@ -126,15 +126,16 @@ function AppIcon({ app, index }: { app: typeof appSections[0]["apps"][0]; index:
   return (
     <motion.div
       variants={fadeUp}
-      transition={{ delay: index * 0.03 }}
-      whileHover={{ scale: 1.08, y: -2 }}
-      whileTap={{ scale: 0.96 }}
+      transition={{ delay: index * 0.025 }}
+      whileHover={{ scale: 1.1, y: -3 }}
+      whileTap={{ scale: 0.95 }}
+      className="flex"
     >
-      <Link href={app.href} className="flex flex-col items-center gap-2 group cursor-pointer">
-        <div className={`w-14 h-14 rounded-2xl bg-gradient-to-br ${app.bg} shadow-lg ${app.shadow} flex items-center justify-center transition-all duration-200 group-hover:shadow-xl group-hover:${app.shadow}`}>
-          <Icon className="w-7 h-7 text-white drop-shadow" strokeWidth={1.8} />
+      <Link href={app.href} className="flex flex-col items-center gap-2 group w-full">
+        <div className={`w-12 h-12 rounded-xl bg-gradient-to-br ${app.bg} shadow-md ${app.shadow} flex items-center justify-center transition-all duration-200 group-hover:shadow-lg`}>
+          <Icon className="w-6 h-6 text-white drop-shadow-sm" strokeWidth={1.8} />
         </div>
-        <span className="text-xs font-medium text-center text-muted-foreground group-hover:text-foreground transition-colors leading-tight max-w-[64px]">
+        <span className="text-[11px] font-medium text-center text-muted-foreground group-hover:text-foreground transition-colors leading-tight w-full">
           {app.label}
         </span>
       </Link>
@@ -151,31 +152,6 @@ export function DashboardClient() {
         <p className="text-muted-foreground text-sm mt-1">
           Welcome back — manage your hosting environment.
         </p>
-      </motion.div>
-
-      {/* App Icon Grid — cPanel style */}
-      <motion.div variants={fadeUp} className="bg-card border rounded-xl overflow-hidden">
-        {appSections.map((section, si) => (
-          <div key={section.title} className={si !== 0 ? "border-t" : ""}>
-            {/* Section header */}
-            <div className="px-5 py-2.5 bg-muted/40">
-              <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                {section.title}
-              </h2>
-            </div>
-            {/* Icons */}
-            <div className="px-5 py-5">
-              <motion.div
-                variants={stagger}
-                className="flex flex-wrap gap-x-6 gap-y-5"
-              >
-                {section.apps.map((app, ai) => (
-                  <AppIcon key={app.label} app={app} index={si * 10 + ai} />
-                ))}
-              </motion.div>
-            </div>
-          </div>
-        ))}
       </motion.div>
 
       {/* Resource Usage + Performance */}
@@ -248,6 +224,32 @@ export function DashboardClient() {
               );
             })}
           </div>
+        </div>
+      </motion.div>
+
+      {/* App Icon Grid — cPanel style, below metrics */}
+      <motion.div variants={fadeUp}>
+        <h2 className="text-base font-semibold mb-3">Quick Access</h2>
+        <div className="bg-card border rounded-xl overflow-hidden">
+          {appSections.map((section, si) => (
+            <div key={section.title} className={si !== 0 ? "border-t" : ""}>
+              <div className="px-5 py-2.5 bg-muted/40">
+                <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                  {section.title}
+                </h3>
+              </div>
+              <div className="px-5 py-5">
+                <motion.div
+                  variants={stagger}
+                  className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 lg:grid-cols-10 xl:grid-cols-12 gap-x-4 gap-y-5"
+                >
+                  {section.apps.map((app, ai) => (
+                    <AppIcon key={app.label} app={app} index={si * 10 + ai} />
+                  ))}
+                </motion.div>
+              </div>
+            </div>
+          ))}
         </div>
       </motion.div>
     </motion.div>
