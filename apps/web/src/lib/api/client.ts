@@ -83,4 +83,7 @@ apiClient.interceptors.response.use(
   }
 );
 
+// Alias so both `import { api }` and `import { apiClient }` work
+export const api = apiClient;
+
 export default apiClient;
