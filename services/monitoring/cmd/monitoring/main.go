@@ -37,7 +37,7 @@ func main() {
 	app.Use(logger.New(), cors.New())
 
 	// WebSocket upgrade middleware
-	app.Use("/api/v1/metrics/stream", func(c *fiber.Ctx) error {
+	app.Use("/api/v1/monitoring/metrics/stream", func(c *fiber.Ctx) error {
 		if fiberws.IsWebSocketUpgrade(c) {
 			return c.Next()
 		}
@@ -45,12 +45,13 @@ func main() {
 	})
 
 	v1 := app.Group("/api/v1")
-	v1.Get("/metrics/current", mh.Current)
-	v1.Get("/metrics/stream", fiberws.New(handler.StreamMetrics))
-	v1.Get("/alerts/rules", mh.ListAlertRules)
-	v1.Post("/alerts/rules", mh.CreateAlertRule)
-	v1.Delete("/alerts/rules/:id", mh.DeleteAlertRule)
-	v1.Get("/incidents", mh.ListIncidents)
+	mon := v1.Group("/monitoring")
+	mon.Get("/metrics/current", mh.Current)
+	mon.Get("/metrics/stream", fiberws.New(handler.StreamMetrics))
+	mon.Get("/alerts/rules", mh.ListAlertRules)
+	mon.Post("/alerts/rules", mh.CreateAlertRule)
+	mon.Delete("/alerts/rules/:id", mh.DeleteAlertRule)
+	mon.Get("/incidents", mh.ListIncidents)
 
 	app.Get("/health", func(c *fiber.Ctx) error {
 		return c.JSON(fiber.Map{"status": "ok", "service": "monitoring"})
@@ -65,6 +66,7 @@ func main() {
 }
 
 func runMigrations(db *sql.DB) {
+	goose.SetTableName("monitoring_goose_migrations")
 	if err := goose.SetDialect("postgres"); err != nil {
 		log.Fatalf("goose dialect: %v", err)
 	}

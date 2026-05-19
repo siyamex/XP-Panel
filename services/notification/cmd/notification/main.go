@@ -15,7 +15,7 @@ var version = "dev"
 func main() {
 	port := os.Getenv("PORT")
 	if port == "" {
-		port = "8080"
+		port = "8094"
 	}
 
 	app := fiber.New(fiber.Config{

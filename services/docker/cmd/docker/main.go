@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"log"
 	"os"
 	"time"
@@ -10,6 +11,8 @@ import (
 	"github.com/gofiber/fiber/v2/middleware/logger"
 	"github.com/gofiber/fiber/v2/middleware/recover"
 	"github.com/jackc/pgx/v5/pgxpool"
+	_ "github.com/jackc/pgx/v5/stdlib"
+	"github.com/pressly/goose/v3"
 	"github.com/xpanel/docker/internal/handler"
 )
 
@@ -18,13 +21,26 @@ var version = "dev"
 func main() {
 	port := os.Getenv("PORT")
 	if port == "" {
-		port = "8095"
+		port = "8096"
 	}
 
 	dbURL := os.Getenv("DATABASE_URL")
 	if dbURL == "" {
 		dbURL = "postgres://xppanel:devpassword@localhost:5432/xppanel"
 	}
+
+	sqlDB, err := sql.Open("pgx", dbURL)
+	if err != nil {
+		log.Fatalf("db open: %v", err)
+	}
+	goose.SetTableName("docker_goose_migrations")
+	if err := goose.SetDialect("postgres"); err != nil {
+		log.Fatalf("goose dialect: %v", err)
+	}
+	if err := goose.Up(sqlDB, "migrations"); err != nil {
+		log.Fatalf("goose up: %v", err)
+	}
+	sqlDB.Close()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()

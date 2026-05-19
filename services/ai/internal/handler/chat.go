@@ -18,9 +18,14 @@ import (
 )
 
 type ChatHandler struct {
-	db         *pgxpool.Pool
+	db           *pgxpool.Pool
 	anthropicKey string
 	openaiKey    string
+}
+
+type historyItem struct {
+	Role    string
+	Content string
 }
 
 func New(db *pgxpool.Pool) *ChatHandler {
@@ -31,7 +36,6 @@ func New(db *pgxpool.Pool) *ChatHandler {
 	}
 }
 
-// ListConversations returns all conversations for the org
 func (h *ChatHandler) ListConversations(c *fiber.Ctx) error {
 	orgID := c.Get("X-Organization-ID", "default")
 	rows, err := h.db.Query(c.Context(),
@@ -53,7 +57,6 @@ func (h *ChatHandler) ListConversations(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"conversations": convs})
 }
 
-// GetConversation returns a conversation with its messages
 func (h *ChatHandler) GetConversation(c *fiber.Ctx) error {
 	id := c.Params("id")
 	var conv domain.Conversation
@@ -85,7 +88,6 @@ func (h *ChatHandler) GetConversation(c *fiber.Ctx) error {
 	return c.JSON(conv)
 }
 
-// DeleteConversation removes a conversation
 func (h *ChatHandler) DeleteConversation(c *fiber.Ctx) error {
 	id := c.Params("id")
 	_, err := h.db.Exec(c.Context(), `DELETE FROM ai_conversations WHERE id=$1`, id)
@@ -95,7 +97,6 @@ func (h *ChatHandler) DeleteConversation(c *fiber.Ctx) error {
 	return c.SendStatus(204)
 }
 
-// Chat handles a chat message, streaming via SSE or returning full response
 func (h *ChatHandler) Chat(c *fiber.Ctx) error {
 	var req domain.ChatRequest
 	if err := c.BodyParser(&req); err != nil {
@@ -111,7 +112,6 @@ func (h *ChatHandler) Chat(c *fiber.Ctx) error {
 		model = "claude-sonnet-4-6"
 	}
 
-	// Create or get conversation
 	convID := req.ConversationID
 	if convID == "" {
 		title := req.Message
@@ -127,23 +127,20 @@ func (h *ChatHandler) Chat(c *fiber.Ctx) error {
 		}
 	}
 
-	// Save user message
 	_, err := h.db.Exec(c.Context(),
 		`INSERT INTO ai_messages (conversation_id, role, content) VALUES ($1,'user',$2)`, convID, req.Message)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
 
-	// Load history for context
 	rows, _ := h.db.Query(c.Context(),
 		`SELECT role, content FROM ai_messages WHERE conversation_id=$1 ORDER BY created_at DESC LIMIT 20`, convID)
-	type msgPair struct{ Role, Content string }
-	var history []msgPair
+	var history []historyItem
 	if rows != nil {
 		for rows.Next() {
-			var m msgPair
+			var m historyItem
 			_ = rows.Scan(&m.Role, &m.Content)
-			history = append([]msgPair{m}, history...)
+			history = append([]historyItem{m}, history...)
 		}
 		rows.Close()
 	}
@@ -154,7 +151,7 @@ func (h *ChatHandler) Chat(c *fiber.Ctx) error {
 	return h.syncResponse(c, convID, model, history)
 }
 
-func (h *ChatHandler) syncResponse(c *fiber.Ctx, convID, model string, history []struct{ Role, Content string }) error {
+func (h *ChatHandler) syncResponse(c *fiber.Ctx, convID, model string, history []historyItem) error {
 	response := h.callLLM(model, history)
 
 	msgID := uuid.New().String()
@@ -170,7 +167,7 @@ func (h *ChatHandler) syncResponse(c *fiber.Ctx, convID, model string, history [
 	})
 }
 
-func (h *ChatHandler) streamResponse(c *fiber.Ctx, convID, model string, history []struct{ Role, Content string }) error {
+func (h *ChatHandler) streamResponse(c *fiber.Ctx, convID, model string, history []historyItem) error {
 	c.Set("Content-Type", "text/event-stream")
 	c.Set("Cache-Control", "no-cache")
 	c.Set("Connection", "keep-alive")
@@ -207,8 +204,7 @@ func (h *ChatHandler) streamResponse(c *fiber.Ctx, convID, model string, history
 	return nil
 }
 
-// callLLM dispatches to Anthropic or falls back to a canned response
-func (h *ChatHandler) callLLM(model string, history []struct{ Role, Content string }) string {
+func (h *ChatHandler) callLLM(model string, history []historyItem) string {
 	if h.anthropicKey != "" {
 		if resp := h.callAnthropic(model, history); resp != "" {
 			return resp
@@ -222,7 +218,7 @@ func (h *ChatHandler) callLLM(model string, history []struct{ Role, Content stri
 	return h.cannedResponse(history)
 }
 
-func (h *ChatHandler) callAnthropic(model string, history []struct{ Role, Content string }) string {
+func (h *ChatHandler) callAnthropic(model string, history []historyItem) string {
 	type anthropicMsg struct {
 		Role    string `json:"role"`
 		Content string `json:"content"`
@@ -262,7 +258,7 @@ func (h *ChatHandler) callAnthropic(model string, history []struct{ Role, Conten
 	return result.Content[0].Text
 }
 
-func (h *ChatHandler) callOpenAI(history []struct{ Role, Content string }) string {
+func (h *ChatHandler) callOpenAI(history []historyItem) string {
 	type oaMsg struct {
 		Role    string `json:"role"`
 		Content string `json:"content"`
@@ -295,8 +291,7 @@ func (h *ChatHandler) callOpenAI(history []struct{ Role, Content string }) strin
 	return result.Choices[0].Message.Content
 }
 
-// cannedResponse provides helpful demo responses when no API key is configured
-func (h *ChatHandler) cannedResponse(history []struct{ Role, Content string }) string {
+func (h *ChatHandler) cannedResponse(history []historyItem) string {
 	if len(history) == 0 {
 		return "Hello! I'm XP-Panel AI. I can help you manage your servers, diagnose issues, optimize performance, and answer questions about your hosting environment. What can I help you with today?"
 	}
@@ -317,7 +312,6 @@ func (h *ChatHandler) cannedResponse(history []struct{ Role, Content string }) s
 	}
 }
 
-// Analyze performs AI analysis of logs, configs, or security data
 func (h *ChatHandler) Analyze(c *fiber.Ctx) error {
 	var req domain.AnalyzeRequest
 	if err := c.BodyParser(&req); err != nil {

@@ -21,6 +21,7 @@ type Config struct {
 	SecurityURL     string
 	MarketplaceURL  string
 	DevOpsURL       string
+	DockerURL       string
 	NotificationURL string
 }
 
@@ -44,6 +45,7 @@ func loadConfig() Config {
 		SecurityURL:     getEnv("SECURITY_SERVICE_URL", "http://localhost:8091"),
 		MarketplaceURL:  getEnv("MARKETPLACE_SERVICE_URL", "http://localhost:8092"),
 		DevOpsURL:       getEnv("DEVOPS_SERVICE_URL", "http://localhost:8093"),
+		DockerURL:       getEnv("DOCKER_SERVICE_URL", "http://localhost:8096"),
 		NotificationURL: getEnv("NOTIFICATION_SERVICE_URL", "http://localhost:8094"),
 	}
 }

@@ -58,6 +58,7 @@ func main() {
 }
 
 func runMigrations(db *sql.DB) {
+	goose.SetTableName("security_goose_migrations")
 	if err := goose.SetDialect("postgres"); err != nil {
 		log.Fatalf("goose dialect: %v", err)
 	}

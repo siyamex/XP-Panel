@@ -16,5 +16,6 @@ use (
 	./services/security
 	./services/marketplace
 	./services/devops
+	./services/docker
 	./services/notification
 )

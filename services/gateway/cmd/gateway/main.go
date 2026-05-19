@@ -121,7 +121,7 @@ func main() {
 	authenticated.All("/security/*", middleware.RequirePerm("security:read"), prx.To(cfg.SecurityURL))
 
 	// Docker management
-	authenticated.All("/docker/*", middleware.RequirePerm("docker:read"), prx.To(cfg.DevOpsURL))
+	authenticated.All("/docker/*", middleware.RequirePerm("docker:read"), prx.To(cfg.DockerURL))
 
 	// DevOps / pipelines (SSE for live logs)
 	authenticated.Get("/devops/deployments/:id/logs", middleware.RequirePerm("devops:read"), prx.SSETo(cfg.DevOpsURL))
