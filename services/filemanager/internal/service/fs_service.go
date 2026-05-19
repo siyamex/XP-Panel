@@ -218,6 +218,50 @@ func (s *FSService) OpenFile(userPath string) (*os.File, fs.FileInfo, error) {
 	return f, stat, nil
 }
 
+func (s *FSService) Chmod(userPath string, mode os.FileMode) error {
+	full, err := s.sanitize(userPath)
+	if err != nil {
+		return err
+	}
+	if _, err := os.Stat(full); os.IsNotExist(err) {
+		return ErrNotFound
+	}
+	return os.Chmod(full, mode)
+}
+
+func (s *FSService) Search(basePath, query string) ([]FileInfo, error) {
+	base, err := s.sanitize(basePath)
+	if err != nil {
+		return nil, err
+	}
+	query = strings.ToLower(query)
+	var results []FileInfo
+	_ = filepath.WalkDir(base, func(path string, d fs.DirEntry, err error) error {
+		if err != nil || len(results) >= 200 {
+			return nil
+		}
+		name := strings.ToLower(d.Name())
+		if strings.Contains(name, query) {
+			info, e := d.Info()
+			if e != nil {
+				return nil
+			}
+			rel, _ := filepath.Rel(s.rootDir, path)
+			results = append(results, FileInfo{
+				Name:       d.Name(),
+				Path:       "/" + filepath.ToSlash(rel),
+				Size:       info.Size(),
+				IsDir:      d.IsDir(),
+				Mode:       info.Mode().String(),
+				ModifiedAt: info.ModTime(),
+				Extension:  strings.TrimPrefix(filepath.Ext(d.Name()), "."),
+			})
+		}
+		return nil
+	})
+	return results, nil
+}
+
 func (s *FSService) RootDir() string {
 	return s.rootDir
 }

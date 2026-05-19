@@ -48,7 +48,7 @@ func (h *ArchiveHandler) Compress(c *fiber.Ctx) error {
 	switch req.Format {
 	case "zip":
 		err = h.compressZip(req.Paths, outFull)
-	case "tar.gz", "tgz":
+	case "tar.gz", "tgz", "tar", "gz", "bz2":
 		err = h.compressTarGz(req.Paths, outFull)
 	default:
 		return fiber.NewError(fiber.StatusBadRequest, "unsupported format: use zip or tar.gz")

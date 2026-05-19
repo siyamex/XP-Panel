@@ -49,6 +49,9 @@ func main() {
 	files.Post("/move", filesH.Move)
 	files.Post("/rename", filesH.Rename)
 	files.Get("/download", filesH.Download)
+	files.Post("/newfile", filesH.NewFile)
+	files.Put("/chmod", filesH.Chmod)
+	files.Get("/search", filesH.Search)
 
 	// Upload
 	files.Post("/upload", uploadH.Upload)

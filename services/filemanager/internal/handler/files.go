@@ -2,6 +2,8 @@ package handler
 
 import (
 	"errors"
+	"os"
+	"strconv"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/xp-panel/xp-panel/services/filemanager/internal/service"
@@ -131,6 +133,51 @@ func (h *FilesHandler) Download(c *fiber.Ctx) error {
 
 	c.Set("Content-Disposition", `attachment; filename="`+stat.Name()+`"`)
 	return c.SendStream(f, int(stat.Size()))
+}
+
+func (h *FilesHandler) Chmod(c *fiber.Ctx) error {
+	var req struct {
+		Path string `json:"path"`
+		Mode string `json:"mode"` // octal string e.g. "755"
+	}
+	if err := c.BodyParser(&req); err != nil {
+		return fiber.ErrBadRequest
+	}
+	if req.Path == "" || req.Mode == "" {
+		return fiber.NewError(fiber.StatusBadRequest, "path and mode are required")
+	}
+	modeVal, err := strconv.ParseUint(req.Mode, 8, 32)
+	if err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, "invalid mode: must be octal (e.g. 755)")
+	}
+	if err := h.fs.Chmod(req.Path, os.FileMode(modeVal)); err != nil {
+		return mapError(err)
+	}
+	return c.JSON(fiber.Map{"success": true, "path": req.Path, "mode": req.Mode})
+}
+
+func (h *FilesHandler) Search(c *fiber.Ctx) error {
+	path := c.Query("path", "/")
+	query := c.Query("q")
+	if query == "" {
+		return fiber.NewError(fiber.StatusBadRequest, "q (search query) is required")
+	}
+	results, err := h.fs.Search(path, query)
+	if err != nil {
+		return mapError(err)
+	}
+	return c.JSON(fiber.Map{"files": results, "total": len(results), "query": query})
+}
+
+func (h *FilesHandler) NewFile(c *fiber.Ctx) error {
+	var req struct{ Path string `json:"path"` }
+	if err := c.BodyParser(&req); err != nil {
+		return fiber.ErrBadRequest
+	}
+	if err := h.fs.Write(req.Path, []byte("")); err != nil {
+		return mapError(err)
+	}
+	return c.Status(fiber.StatusCreated).JSON(fiber.Map{"success": true, "path": req.Path})
 }
 
 func mapError(err error) error {

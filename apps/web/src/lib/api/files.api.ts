@@ -13,48 +13,53 @@ export interface FileInfo {
 
 export const filesApi = {
   list: (path: string = '/') =>
-    api.get<{ files: FileInfo[]; path: string; total: number }>(`/filemanager/files/list?path=${encodeURIComponent(path)}`),
+    api.get<{ files: FileInfo[]; path: string; total: number }>(`/files/list?path=${encodeURIComponent(path)}`),
+
+  search: (path: string, q: string) =>
+    api.get<{ files: FileInfo[]; total: number; query: string }>(`/files/search?path=${encodeURIComponent(path)}&q=${encodeURIComponent(q)}`),
 
   read: (path: string) =>
-    api.get<{ content: string; path: string }>(`/filemanager/files/read?path=${encodeURIComponent(path)}`),
+    api.get<{ content: string; path: string }>(`/files/read?path=${encodeURIComponent(path)}`),
 
   write: (path: string, content: string) =>
-    api.put<{ success: boolean; path: string }>('/filemanager/files/write', { path, content }),
+    api.put<{ success: boolean; path: string }>('/files/write', { path, content }),
+
+  newFile: (path: string) =>
+    api.post<{ success: boolean; path: string }>('/files/newfile', { path }),
 
   delete: (path: string) =>
-    api.delete(`/filemanager/files/delete?path=${encodeURIComponent(path)}`),
+    api.delete(`/files/delete?path=${encodeURIComponent(path)}`),
 
   mkdir: (path: string) =>
-    api.post<{ success: boolean; path: string }>('/filemanager/files/mkdir', { path }),
+    api.post<{ success: boolean; path: string }>('/files/mkdir', { path }),
 
   copy: (source: string, destination: string) =>
-    api.post<{ success: boolean }>('/filemanager/files/copy', { source, destination }),
+    api.post<{ success: boolean }>('/files/copy', { source, destination }),
 
   move: (source: string, destination: string) =>
-    api.post<{ success: boolean }>('/filemanager/files/move', { source, destination }),
+    api.post<{ success: boolean }>('/files/move', { source, destination }),
 
   rename: (path: string, new_name: string) =>
-    api.post<{ success: boolean }>('/filemanager/files/rename', { path, new_name }),
+    api.post<{ success: boolean }>('/files/rename', { path, new_name }),
+
+  chmod: (path: string, mode: string) =>
+    api.put<{ success: boolean; path: string; mode: string }>('/files/chmod', { path, mode }),
 
   downloadUrl: (path: string) =>
-    `${process.env.NEXT_PUBLIC_API_URL}/api/v1/filemanager/files/download?path=${encodeURIComponent(path)}`,
+    `${process.env.NEXT_PUBLIC_API_URL}/api/v1/files/download?path=${encodeURIComponent(path)}`,
 
   upload: (path: string, files: FileList) => {
     const form = new FormData()
     form.append('path', path)
-    for (let i = 0; i < files.length; i++) {
-      form.append('files', files[i])
-    }
+    for (let i = 0; i < files.length; i++) form.append('files', files[i])
     return api.post<{ uploaded: Array<{ name: string; error?: string }>; count: string }>(
-      '/filemanager/files/upload',
-      form,
-      { headers: { 'Content-Type': 'multipart/form-data' } }
+      '/files/upload', form, { headers: { 'Content-Type': 'multipart/form-data' } }
     )
   },
 
-  compress: (paths: string[], output: string, format: 'zip' | 'tar.gz' = 'zip') =>
-    api.post<{ success: boolean; output: string }>('/filemanager/files/compress', { paths, output, format }),
+  compress: (paths: string[], output: string, format: 'zip' | 'tar.gz' | 'tar' | 'gz' | 'bz2' = 'zip') =>
+    api.post<{ success: boolean; output: string }>('/files/compress', { paths, output, format }),
 
   extract: (path: string, destination?: string) =>
-    api.post<{ success: boolean; destination: string }>('/filemanager/files/extract', { path, destination }),
+    api.post<{ success: boolean; destination: string }>('/files/extract', { path, destination }),
 }
