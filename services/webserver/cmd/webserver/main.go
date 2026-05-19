@@ -10,151 +10,74 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v2/middleware/cors"
 	"github.com/gofiber/fiber/v2/middleware/logger"
 	"github.com/gofiber/fiber/v2/middleware/recover"
 	"github.com/jackc/pgx/v5/pgxpool"
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/pressly/goose/v3"
-	"github.com/xp-panel/xp-panel/services/webserver/internal/service"
+	"github.com/xp-panel/xp-panel/services/webserver/internal/handler"
 )
 
 func main() {
-	databaseURL := env("DATABASE_URL", "postgres://xppanel:devpassword@localhost:5432/xppanel")
+	dbURL := env("DATABASE_URL", "postgres://xppanel:devpassword@localhost:5432/xppanel?sslmode=disable")
 	port := env("PORT", "8084")
-	nginxConfigDir := env("NGINX_CONFIG_DIR", "/etc/nginx/sites-enabled")
-	phpPoolDir := env("PHP_POOL_DIR", "/etc/php/8.3/fpm/pool.d")
-	dryRun := env("DRY_RUN", "true") == "true"
 
-	db, err := sql.Open("pgx", databaseURL)
-	if err != nil {
-		log.Fatalf("open db: %v", err)
-	}
+	db, err := sql.Open("pgx", dbURL)
+	if err != nil { log.Fatalf("open db: %v", err) }
 	goose.SetTableName("webserver_goose_migrations")
-	if err := goose.Up(db, "migrations"); err != nil {
-		log.Fatalf("migrations: %v", err)
-	}
+	if err := goose.Up(db, "migrations"); err != nil { log.Fatalf("migrations: %v", err) }
 	db.Close()
 
-	pool, err := pgxpool.New(context.Background(), databaseURL)
-	if err != nil {
-		log.Fatalf("pgxpool: %v", err)
-	}
+	pool, err := pgxpool.New(context.Background(), dbURL)
+	if err != nil { log.Fatalf("pgxpool: %v", err) }
 	defer pool.Close()
 
-	nginxSvc := service.NewNginxService(nginxConfigDir, "internal/templates", dryRun)
-	phpSvc := service.NewPHPService(phpPoolDir, dryRun)
-	sslSvc := service.NewSSLService(pool, dryRun)
-	vhostSvc := service.NewVHostService(pool, nginxSvc, phpSvc)
-
+	h := handler.New(pool)
 	app := fiber.New(fiber.Config{
-		AppName:      "XP-Panel Webserver Service",
-		ReadTimeout:  10 * time.Second,
-		WriteTimeout: 30 * time.Second,
+		AppName: "XP-Panel WebServer Service",
+		ReadTimeout: 30 * time.Second, WriteTimeout: 30 * time.Second,
+		ErrorHandler: func(c *fiber.Ctx, err error) error {
+			code := 500; msg := "internal server error"
+			if e, ok := err.(*fiber.Error); ok { code, msg = e.Code, e.Message }
+			return c.Status(code).JSON(fiber.Map{"error": fiber.Map{"message": msg, "code": code}})
+		},
 	})
-	app.Use(recover.New())
-	app.Use(logger.New())
-
+	app.Use(recover.New(), logger.New())
+	app.Use(cors.New(cors.Config{
+		AllowOrigins: env("CORS_ORIGINS", "http://localhost:3000"),
+		AllowHeaders: "Origin, Content-Type, Accept, Authorization, X-Org-ID, X-User-ID",
+		AllowMethods: "GET, POST, PUT, PATCH, DELETE, OPTIONS",
+	}))
 	app.Get("/health", func(c *fiber.Ctx) error {
 		return c.JSON(fiber.Map{"status": "ok", "service": "webserver"})
 	})
 
-	api := app.Group("/api/v1")
-
-	// VHost routes
-	vhosts := api.Group("/vhosts")
-	vhosts.Get("/", func(c *fiber.Ctx) error {
-		orgID := mustOrgID(c)
-		list, err := vhostSvc.ListVHosts(c.Context(), orgID)
-		if err != nil {
-			return fiber.NewError(fiber.StatusInternalServerError, err.Error())
-		}
-		return c.JSON(fiber.Map{"vhosts": list, "total": len(list)})
-	})
-	vhosts.Post("/", func(c *fiber.Ctx) error {
-		orgID := mustOrgID(c)
-		var req service.CreateVHostReq
-		if err := c.BodyParser(&req); err != nil {
-			return fiber.ErrBadRequest
-		}
-		v, err := vhostSvc.CreateVHost(c.Context(), orgID, req)
-		if err != nil {
-			return fiber.NewError(fiber.StatusInternalServerError, err.Error())
-		}
-		return c.Status(fiber.StatusCreated).JSON(v)
-	})
-	vhosts.Delete("/:id", func(c *fiber.Ctx) error {
-		orgID := mustOrgID(c)
-		id := mustUUID(c, "id")
-		if err := vhostSvc.DeleteVHost(c.Context(), id, orgID); err != nil {
-			return fiber.NewError(fiber.StatusInternalServerError, err.Error())
-		}
-		return c.SendStatus(fiber.StatusNoContent)
-	})
-
-	// SSL routes
-	ssl := api.Group("/ssl")
-	ssl.Get("/", func(c *fiber.Ctx) error {
-		orgID := mustOrgID(c)
-		list, err := sslSvc.ListCertificates(c.Context(), orgID)
-		if err != nil {
-			return fiber.NewError(fiber.StatusInternalServerError, err.Error())
-		}
-		return c.JSON(fiber.Map{"certificates": list, "total": len(list)})
-	})
-	ssl.Post("/issue", func(c *fiber.Ctx) error {
-		orgID := mustOrgID(c)
-		var req service.IssueSSLReq
-		if err := c.BodyParser(&req); err != nil {
-			return fiber.ErrBadRequest
-		}
-		cert, err := sslSvc.IssueCertificate(c.Context(), orgID, req)
-		if err != nil {
-			return fiber.NewError(fiber.StatusInternalServerError, err.Error())
-		}
-		return c.Status(fiber.StatusCreated).JSON(cert)
-	})
-	ssl.Post("/:id/renew", func(c *fiber.Ctx) error {
-		orgID := mustOrgID(c)
-		id := mustUUID(c, "id")
-		cert, err := sslSvc.RenewCertificate(c.Context(), id, orgID)
-		if err != nil {
-			return fiber.NewError(fiber.StatusInternalServerError, err.Error())
-		}
-		return c.JSON(cert)
-	})
-	ssl.Delete("/:id", func(c *fiber.Ctx) error {
-		orgID := mustOrgID(c)
-		id := mustUUID(c, "id")
-		if err := sslSvc.DeleteCertificate(c.Context(), id, orgID); err != nil {
-			return fiber.NewError(fiber.StatusInternalServerError, err.Error())
-		}
-		return c.SendStatus(fiber.StatusNoContent)
-	})
+	api := app.Group("/api/v1/webserver")
+	api.Get("/vhosts",          h.ListVhosts)
+	api.Post("/vhosts",         h.CreateVhost)
+	api.Get("/vhosts/:id",      h.GetVhost)
+	api.Delete("/vhosts/:id",   h.DeleteVhost)
+	api.Put("/vhosts/:id",      h.UpdateVhost)
+	api.Get("/ssl",             h.ListSSL)
+	api.Post("/ssl/issue",      h.IssueSSL)
+	api.Delete("/ssl/:id",      h.DeleteSSL)
+	api.Get("/php",             h.ListPHP)
+	api.Put("/php/:vhostId",    h.UpdatePHP)
 
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	go func() {
 		<-quit
-		_ = app.ShutdownWithTimeout(5 * time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = app.ShutdownWithContext(ctx)
 	}()
-
-	log.Printf("webserver service listening on :%s", port)
-	if err := app.Listen(":" + port); err != nil {
-		log.Fatalf("listen: %v", err)
-	}
+	log.Printf("WebServer service listening on :%s", port)
+	if err := app.Listen(":" + port); err != nil { log.Fatalf("listen: %v", err) }
 }
 
 func env(key, fallback string) string {
-	if v := os.Getenv(key); v != "" {
-		return v
-	}
+	if v := os.Getenv(key); v != "" { return v }
 	return fallback
-}
-
-func mustOrgID(c *fiber.Ctx) interface{} {
-	return c.Get("X-Org-ID")
-}
-
-func mustUUID(c *fiber.Ctx, param string) interface{} {
-	return c.Params(param)
 }

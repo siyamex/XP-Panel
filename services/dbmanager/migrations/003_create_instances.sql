@@ -15,16 +15,9 @@ CREATE TABLE IF NOT EXISTS database_instances (
   UNIQUE(organization_id, name)
 );
 
-CREATE TABLE IF NOT EXISTS database_users (
-  id              UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
-  organization_id UUID        NOT NULL,
-  database_id     UUID        NOT NULL REFERENCES database_instances(id) ON DELETE CASCADE,
-  username        VARCHAR(100) NOT NULL,
-  db_type         VARCHAR(20)  NOT NULL DEFAULT 'postgresql',
-  created_at      TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
-  UNIQUE(database_id, username)
-);
+ALTER TABLE database_users ADD COLUMN IF NOT EXISTS database_id UUID REFERENCES database_instances(id) ON DELETE CASCADE;
+ALTER TABLE database_users DROP COLUMN IF EXISTS password_hash;
 
 -- +goose Down
-DROP TABLE IF EXISTS database_users;
+ALTER TABLE database_users DROP COLUMN IF EXISTS database_id;
 DROP TABLE IF EXISTS database_instances;

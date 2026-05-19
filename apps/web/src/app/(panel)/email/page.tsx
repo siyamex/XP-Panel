@@ -56,7 +56,7 @@ export default function EmailPage() {
         </div>
         <div className="bg-card border border-border rounded-xl p-4">
           <div className="text-sm text-muted-foreground">Active</div>
-          <div className="text-2xl font-bold mt-1 text-green-500">{(data?.mailboxes ?? []).filter((m) => m.active).length}</div>
+          <div className="text-2xl font-bold mt-1 text-green-500">{(data?.mailboxes ?? []).filter((m) => m.enabled).length}</div>
         </div>
         <div className="bg-card border border-border rounded-xl p-4">
           <div className="text-sm text-muted-foreground">Total Storage Used</div>
@@ -102,7 +102,7 @@ export default function EmailPage() {
                       </div>
                     </td>
                     <td className="px-4 py-3">
-                      <span className={cn('text-xs px-2 py-0.5 rounded-full', m.active ? 'bg-green-500/10 text-green-500' : 'bg-muted text-muted-foreground')}>{m.active ? 'Active' : 'Disabled'}</span>
+                      <span className={cn('text-xs px-2 py-0.5 rounded-full', m.enabled ? 'bg-green-500/10 text-green-500' : 'bg-muted text-muted-foreground')}>{m.enabled ? 'Active' : 'Disabled'}</span>
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">

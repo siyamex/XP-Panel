@@ -3,8 +3,8 @@ package handler
 import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/xpanel/dbmanager/internal/domain"
-	"github.com/xpanel/dbmanager/internal/provider"
+	"github.com/xp-panel/xp-panel/services/dbmanager/internal/domain"
+	"github.com/xp-panel/xp-panel/services/dbmanager/internal/provider"
 )
 
 type DatabaseHandler struct {

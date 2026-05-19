@@ -3,20 +3,20 @@ import type { Database, DBUser, CreateDatabaseRequest, CreateDBUserRequest } fro
 
 export const databasesApi = {
   list: () =>
-    api.get<{ databases: Database[]; total: number }>('/dbmanager/databases'),
+    api.get<{ databases: Database[]; total: number }>('/databases'),
 
   create: (data: CreateDatabaseRequest) =>
-    api.post<Database>('/dbmanager/databases', data),
+    api.post<Database>('/databases', data),
 
   delete: (id: string) =>
-    api.delete(`/dbmanager/databases/${id}`),
+    api.delete(`/databases/${id}`),
 
   listUsers: (dbId: string) =>
-    api.get<{ users: DBUser[] }>(`/dbmanager/databases/${dbId}/users`),
+    api.get<{ users: DBUser[] }>(`/databases/${dbId}/users`),
 
   createUser: (dbId: string, data: CreateDBUserRequest) =>
-    api.post<DBUser>(`/dbmanager/databases/${dbId}/users`, data),
+    api.post<DBUser>(`/databases/${dbId}/users`, data),
 
   deleteUser: (dbId: string, userId: string) =>
-    api.delete(`/dbmanager/databases/${dbId}/users/${userId}`),
+    api.delete(`/databases/${dbId}/users/${userId}`),
 }

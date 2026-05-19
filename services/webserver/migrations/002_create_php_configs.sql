@@ -18,9 +18,6 @@ CREATE TABLE php_configs (
 
 CREATE INDEX idx_php_configs_vhost ON php_configs(vhost_id);
 
-CREATE TRIGGER trg_php_configs_updated_at
-  BEFORE UPDATE ON php_configs
-  FOR EACH ROW EXECUTE FUNCTION update_webserver_updated_at();
 
 -- +goose Down
 DROP TABLE IF EXISTS php_configs;

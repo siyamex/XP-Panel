@@ -130,7 +130,6 @@ func (h *FilesHandler) Download(c *fiber.Ctx) error {
 	defer f.Close()
 
 	c.Set("Content-Disposition", `attachment; filename="`+stat.Name()+`"`)
-	c.Set("Content-Length", fiber.IntString(int(stat.Size())))
 	return c.SendStream(f, int(stat.Size()))
 }
 

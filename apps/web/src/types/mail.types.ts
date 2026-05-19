@@ -7,7 +7,7 @@ export interface Mailbox {
   email: string
   quota_mb: number
   used_mb: number
-  active: boolean
+  enabled: boolean
   created_at: string
   updated_at: string
 }

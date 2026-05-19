@@ -1,5 +1,5 @@
 -- +goose Up
-CREATE TABLE ssl_certificates (
+CREATE TABLE IF NOT EXISTS ssl_certificates (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   organization_id UUID NOT NULL,
   domain VARCHAR(253) NOT NULL,
@@ -21,12 +21,9 @@ CREATE TABLE ssl_certificates (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_ssl_certs_org ON ssl_certificates(organization_id);
-CREATE INDEX idx_ssl_certs_domain ON ssl_certificates(domain);
+CREATE INDEX IF NOT EXISTS idx_ssl_certs_org ON ssl_certificates(organization_id);
+CREATE INDEX IF NOT EXISTS idx_ssl_certs_domain ON ssl_certificates(domain);
 
-CREATE TRIGGER trg_ssl_certs_updated_at
-  BEFORE UPDATE ON ssl_certificates
-  FOR EACH ROW EXECUTE FUNCTION update_webserver_updated_at();
 
 -- +goose Down
 DROP TABLE IF EXISTS ssl_certificates;

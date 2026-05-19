@@ -1,5 +1,5 @@
 -- +goose Up
-CREATE TABLE email_forwarders (
+CREATE TABLE IF NOT EXISTS email_forwarders (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   organization_id UUID NOT NULL,
   source_local VARCHAR(64) NOT NULL,
@@ -11,11 +11,7 @@ CREATE TABLE email_forwarders (
   UNIQUE(source_local, source_domain)
 );
 
-CREATE INDEX idx_forwarders_org ON email_forwarders(organization_id);
-
-CREATE TRIGGER trg_forwarders_updated_at
-  BEFORE UPDATE ON email_forwarders
-  FOR EACH ROW EXECUTE FUNCTION update_mail_updated_at();
+CREATE INDEX IF NOT EXISTS idx_forwarders_org ON email_forwarders(organization_id);
 
 -- +goose Down
 DROP TABLE IF EXISTS email_forwarders;

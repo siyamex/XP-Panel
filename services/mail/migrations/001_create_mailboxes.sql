@@ -1,30 +1,20 @@
 -- +goose Up
-CREATE TABLE mailboxes (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  organization_id UUID NOT NULL,
-  domain_id UUID,
-  local_part VARCHAR(64) NOT NULL,
-  domain VARCHAR(253) NOT NULL,
-  password_hash TEXT NOT NULL,
-  quota_mb INT NOT NULL DEFAULT 1024,
-  used_mb INT NOT NULL DEFAULT 0,
-  active BOOLEAN NOT NULL DEFAULT TRUE,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  UNIQUE(local_part, domain)
+CREATE TABLE IF NOT EXISTS mailboxes (
+  id              UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  organization_id UUID        NOT NULL,
+  domain          VARCHAR(253) NOT NULL,
+  username        VARCHAR(100) NOT NULL,
+  email           VARCHAR(354) NOT NULL UNIQUE,
+  password_hash   TEXT        NOT NULL,
+  quota_mb        INT         NOT NULL DEFAULT 1024,
+  used_mb         INT         NOT NULL DEFAULT 0,
+  enabled         BOOLEAN     NOT NULL DEFAULT TRUE,
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE(domain, username)
 );
-
-CREATE INDEX idx_mailboxes_org ON mailboxes(organization_id);
-CREATE INDEX idx_mailboxes_domain ON mailboxes(domain);
-
-CREATE OR REPLACE FUNCTION update_mail_updated_at()
-RETURNS TRIGGER AS $$
-BEGIN NEW.updated_at = NOW(); RETURN NEW; END;
-$$ LANGUAGE plpgsql;
-
-CREATE TRIGGER trg_mailboxes_updated_at
-  BEFORE UPDATE ON mailboxes
-  FOR EACH ROW EXECUTE FUNCTION update_mail_updated_at();
+CREATE INDEX IF NOT EXISTS idx_mailboxes_org ON mailboxes(organization_id);
+CREATE INDEX IF NOT EXISTS idx_mailboxes_domain ON mailboxes(domain);
 
 -- +goose Down
 DROP TABLE IF EXISTS mailboxes;
