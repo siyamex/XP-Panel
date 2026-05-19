@@ -103,6 +103,9 @@ func (h *ArchiveHandler) Extract(c *fiber.Ctx) error {
 }
 
 func (h *ArchiveHandler) compressZip(paths []string, output string) error {
+	if err := os.MkdirAll(filepath.Dir(output), 0755); err != nil {
+		return err
+	}
 	zf, err := os.Create(output)
 	if err != nil {
 		return err
@@ -136,7 +139,7 @@ func addToZip(w *zip.Writer, srcPath, baseName string) error {
 				return err
 			}
 			rel, _ := filepath.Rel(filepath.Dir(srcPath), path)
-			fw, err := w.Create(rel)
+			fw, err := w.Create(strings.ReplaceAll(rel, "\\", "/"))
 			if err != nil {
 				return err
 			}
@@ -164,6 +167,9 @@ func addToZip(w *zip.Writer, srcPath, baseName string) error {
 }
 
 func (h *ArchiveHandler) compressTarGz(paths []string, output string) error {
+	if err := os.MkdirAll(filepath.Dir(output), 0755); err != nil {
+		return err
+	}
 	tf, err := os.Create(output)
 	if err != nil {
 		return err
@@ -193,6 +199,7 @@ func addToTar(tw *tar.Writer, srcPath, baseName string) error {
 			return err
 		}
 		rel, _ := filepath.Rel(filepath.Dir(srcPath), path)
+		rel = strings.ReplaceAll(rel, "\\", "/")
 		hdr := &tar.Header{
 			Name:    rel,
 			Size:    info.Size(),
@@ -201,7 +208,9 @@ func addToTar(tw *tar.Writer, srcPath, baseName string) error {
 		}
 		if info.IsDir() {
 			hdr.Typeflag = tar.TypeDir
-			hdr.Name += "/"
+			if !strings.HasSuffix(hdr.Name, "/") {
+				hdr.Name += "/"
+			}
 			return tw.WriteHeader(hdr)
 		}
 		hdr.Typeflag = tar.TypeReg

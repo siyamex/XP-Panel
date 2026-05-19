@@ -28,6 +28,14 @@ func main() {
 		ReadTimeout:  30 * time.Second,
 		WriteTimeout: 120 * time.Second,
 		BodyLimit:    500 * 1024 * 1024, // 500MB upload limit
+		ErrorHandler: func(c *fiber.Ctx, err error) error {
+			code := fiber.StatusInternalServerError
+			msg := "internal server error"
+			if e, ok := err.(*fiber.Error); ok {
+				code, msg = e.Code, e.Message
+			}
+			return c.Status(code).JSON(fiber.Map{"error": fiber.Map{"message": msg, "code": code}})
+		},
 	})
 	app.Use(recover.New())
 	app.Use(logger.New())

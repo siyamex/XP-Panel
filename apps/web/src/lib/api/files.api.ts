@@ -52,8 +52,9 @@ export const filesApi = {
     const form = new FormData()
     form.append('path', path)
     for (let i = 0; i < files.length; i++) form.append('files', files[i])
+    // Do NOT set Content-Type — browser must auto-set it with the multipart boundary
     return api.post<{ uploaded: Array<{ name: string; error?: string }>; count: string }>(
-      '/files/upload', form, { headers: { 'Content-Type': 'multipart/form-data' } }
+      '/files/upload', form, { headers: { 'Content-Type': undefined } }
     )
   },
 
