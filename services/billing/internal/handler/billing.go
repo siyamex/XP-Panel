@@ -1,9 +1,14 @@
 package handler
 
 import (
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"math/rand"
+	"os"
+	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -148,27 +153,108 @@ func (h *BillingHandler) ListInvoices(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"invoices": invoices})
 }
 
-// GetUsage returns current period usage stats
+// GetUsage returns current period usage stats from real DB counts
 func (h *BillingHandler) GetUsage(c *fiber.Ctx) error {
 	orgID := c.Get("X-Org-ID", "default")
-	_ = orgID
 
-	// Return simulated usage data
-	usage := fiber.Map{
-		"domains":       fiber.Map{"used": 3, "limit": 25},
-		"disk_gb":       fiber.Map{"used": 12.4, "limit": 100},
-		"bandwidth_gb":  fiber.Map{"used": 45.2, "limit": 500},
-		"email_accounts": fiber.Map{"used": 8, "limit": 100},
-		"databases":     fiber.Map{"used": 2, "limit": 10},
+	type stat struct {
+		Used  int64   `json:"used"`
+		Limit int64   `json:"limit"`
+		UsedF float64 `json:"used_f,omitempty"`
 	}
+
+	usage := map[string]interface{}{}
+
+	// Domains
+	var domainCount int64
+	_ = h.db.QueryRow(c.Context(), `SELECT COUNT(*) FROM domains WHERE organization_id=$1`, orgID).Scan(&domainCount)
+
+	// Email accounts
+	var mailCount int64
+	_ = h.db.QueryRow(c.Context(), `SELECT COUNT(*) FROM mailboxes WHERE organization_id=$1`, orgID).Scan(&mailCount)
+
+	// Databases
+	var dbCount int64
+	_ = h.db.QueryRow(c.Context(), `SELECT COUNT(*) FROM database_instances WHERE organization_id=$1`, orgID).Scan(&dbCount)
+
+	// Disk usage (sum from domains table)
+	var diskMB int64
+	_ = h.db.QueryRow(c.Context(), `SELECT COALESCE(SUM(disk_used_mb),0) FROM domains WHERE organization_id=$1`, orgID).Scan(&diskMB)
+
+	// Bandwidth (sum from domains)
+	var bwMB int64
+	_ = h.db.QueryRow(c.Context(), `SELECT COALESCE(SUM(bandwidth_used_mb),0) FROM domains WHERE organization_id=$1`, orgID).Scan(&bwMB)
+
+	// Get plan limits
+	var limitsJSON []byte
+	_ = h.db.QueryRow(c.Context(),
+		`SELECT p.limits FROM billing_plans p JOIN subscriptions s ON s.plan_id=p.id WHERE s.organization_id=$1`, orgID,
+	).Scan(&limitsJSON)
+
+	limits := map[string]int64{
+		"domains": 25, "disk_gb": 100, "bandwidth_gb": 500, "email_accounts": 100, "databases": 10,
+	}
+	if limitsJSON != nil {
+		var parsed map[string]interface{}
+		if json.Unmarshal(limitsJSON, &parsed) == nil {
+			for k, v := range parsed {
+				if n, ok := v.(float64); ok {
+					limits[k] = int64(n)
+				}
+			}
+		}
+	}
+
+	usage["domains"] = stat{Used: domainCount, Limit: limits["domains"]}
+	usage["email_accounts"] = stat{Used: mailCount, Limit: limits["email_accounts"]}
+	usage["databases"] = stat{Used: dbCount, Limit: limits["databases"]}
+	usage["disk_gb"] = stat{Used: diskMB / 1024, Limit: limits["disk_gb"], UsedF: float64(diskMB) / 1024}
+	usage["bandwidth_gb"] = stat{Used: bwMB / 1024, Limit: limits["bandwidth_gb"], UsedF: float64(bwMB) / 1024}
+
 	return c.JSON(usage)
 }
 
-// StripeWebhook handles incoming Stripe webhook events
+// StripeWebhook handles incoming Stripe webhook events with signature verification
 func (h *BillingHandler) StripeWebhook(c *fiber.Ctx) error {
-	// In production: validate stripe-signature header, parse event type, update DB
-	eventType := c.Get("Stripe-Event-Type", "unknown")
-	_ = eventType
+	sigHeader := c.Get("Stripe-Signature")
+	body := c.Body()
+
+	webhookSecret := os.Getenv("STRIPE_WEBHOOK_SECRET")
+	if webhookSecret != "" && !verifyStripeSignature(sigHeader, body, webhookSecret) {
+		return c.Status(400).JSON(fiber.Map{"error": "invalid stripe signature"})
+	}
+
+	var event struct {
+		Type string `json:"type"`
+		Data struct {
+			Object map[string]interface{} `json:"object"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &event); err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "invalid event"})
+	}
+
+	switch event.Type {
+	case "invoice.payment_succeeded":
+		orgID, _ := event.Data.Object["metadata"].(map[string]interface{})["org_id"].(string)
+		if orgID != "" {
+			_, _ = h.db.Exec(c.Context(),
+				`UPDATE subscriptions SET status='active', updated_at=NOW() WHERE organization_id=$1`, orgID)
+		}
+	case "invoice.payment_failed":
+		orgID, _ := event.Data.Object["metadata"].(map[string]interface{})["org_id"].(string)
+		if orgID != "" {
+			_, _ = h.db.Exec(c.Context(),
+				`UPDATE subscriptions SET status='past_due', updated_at=NOW() WHERE organization_id=$1`, orgID)
+		}
+	case "customer.subscription.deleted":
+		orgID, _ := event.Data.Object["metadata"].(map[string]interface{})["org_id"].(string)
+		if orgID != "" {
+			_, _ = h.db.Exec(c.Context(),
+				`UPDATE subscriptions SET status='cancelled', updated_at=NOW() WHERE organization_id=$1`, orgID)
+		}
+	}
+
 	return c.JSON(fiber.Map{"received": true})
 }
 
@@ -178,3 +264,25 @@ func generateInvoiceNumber() string {
 }
 
 var _ = generateInvoiceNumber
+
+// verifyStripeSignature validates the Stripe-Signature header using HMAC-SHA256.
+func verifyStripeSignature(sigHeader string, payload []byte, secret string) bool {
+	// header format: t=timestamp,v1=signature
+	parts := strings.Split(sigHeader, ",")
+	var timestamp, sig string
+	for _, p := range parts {
+		if strings.HasPrefix(p, "t=") {
+			timestamp = strings.TrimPrefix(p, "t=")
+		}
+		if strings.HasPrefix(p, "v1=") {
+			sig = strings.TrimPrefix(p, "v1=")
+		}
+	}
+	if timestamp == "" || sig == "" {
+		return false
+	}
+	mac := hmac.New(sha256.New, []byte(secret))
+	mac.Write([]byte(timestamp + "." + string(payload)))
+	expected := hex.EncodeToString(mac.Sum(nil))
+	return hmac.Equal([]byte(expected), []byte(sig))
+}

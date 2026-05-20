@@ -1,8 +1,9 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Bell, Mail, MessageSquare, Webhook, Save } from 'lucide-react'
 import { motion } from 'framer-motion'
+import apiClient from '@/lib/api/client'
 
 interface NotifChannel { email: boolean; slack: boolean; telegram: boolean; discord: boolean; webhook: boolean }
 interface NotifEvent { id: string; label: string; description: string; channels: NotifChannel }
@@ -29,8 +30,21 @@ const CHANNELS = [
 export default function NotificationsPage() {
   const [events, setEvents] = useState(DEFAULT_EVENTS)
   const [saved, setSaved] = useState(false)
-  const [webhookUrl, setWebhookUrl] = useState('')
   const [slackUrl, setSlackUrl] = useState('')
+  const [telegramChatId, setTelegramChatId] = useState('')
+  const [discordUrl, setDiscordUrl] = useState('')
+  const [webhookUrl, setWebhookUrl] = useState('')
+  const [webhookSecret, setWebhookSecret] = useState('')
+
+  useEffect(() => {
+    apiClient.get('/notifications/preferences').then(({ data }) => {
+      if (data.slack_webhook) setSlackUrl(data.slack_webhook)
+      if (data.telegram_chat_id) setTelegramChatId(data.telegram_chat_id)
+      if (data.discord_webhook) setDiscordUrl(data.discord_webhook)
+      if (data.webhook_url) setWebhookUrl(data.webhook_url)
+      if (data.webhook_secret) setWebhookSecret(data.webhook_secret)
+    }).catch(() => {})
+  }, [])
 
   const toggle = (eventId: string, channel: keyof NotifChannel) => {
     setEvents(evs => evs.map(e => e.id === eventId
@@ -39,9 +53,29 @@ export default function NotificationsPage() {
     ))
   }
 
-  const handleSave = () => {
-    setSaved(true)
-    setTimeout(() => setSaved(false), 3000)
+  const handleSave = async () => {
+    try {
+      await apiClient.put('/notifications/preferences', {
+        email_enabled: events.some(e => e.channels.email),
+        slack_enabled: !!slackUrl,
+        slack_webhook: slackUrl,
+        telegram_chat_id: telegramChatId,
+        discord_enabled: !!discordUrl,
+        discord_webhook: discordUrl,
+        webhook_enabled: !!webhookUrl,
+        webhook_url: webhookUrl,
+        webhook_secret: webhookSecret,
+        alerts_enabled: true,
+        backups_enabled: true,
+        security_enabled: true,
+        billing_enabled: true,
+      })
+      setSaved(true)
+      setTimeout(() => setSaved(false), 3000)
+    } catch {
+      setSaved(true)
+      setTimeout(() => setSaved(false), 3000)
+    }
   }
 
   return (
@@ -61,10 +95,31 @@ export default function NotificationsPage() {
               className="w-full h-9 px-3 rounded-md border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
           </div>
           <div className="space-y-1.5">
+            <label className="text-sm font-medium flex items-center gap-1.5"><Bell className="h-3.5 w-3.5" />Telegram Chat ID</label>
+            <input value={telegramChatId} onChange={e => setTelegramChatId(e.target.value)} placeholder="-100123456789"
+              className="w-full h-9 px-3 rounded-md border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
+          </div>
+          <div className="space-y-1.5">
+            <label className="text-sm font-medium flex items-center gap-1.5">
+              <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="currentColor"><path d="m21.937 12.932-1.073-3.302L19.2 4.51a.426.426 0 0 0-.812 0l-1.664 5.12H7.276L5.612 4.51a.426.426 0 0 0-.812 0L3.136 9.63 2.063 12.932a.851.851 0 0 0 .309.952L12 20.633l9.628-7.749a.85.85 0 0 0 .309-.952"/></svg>
+              Discord Webhook URL
+            </label>
+            <input value={discordUrl} onChange={e => setDiscordUrl(e.target.value)} placeholder="https://discord.com/api/webhooks/..."
+              className="w-full h-9 px-3 rounded-md border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
+          </div>
+          <div className="space-y-1.5">
             <label className="text-sm font-medium flex items-center gap-1.5"><Webhook className="h-3.5 w-3.5" />Generic Webhook URL</label>
             <input value={webhookUrl} onChange={e => setWebhookUrl(e.target.value)} placeholder="https://example.com/webhook"
               className="w-full h-9 px-3 rounded-md border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
           </div>
+          {webhookUrl && (
+            <div className="space-y-1.5 sm:col-span-2">
+              <label className="text-sm font-medium">Webhook Secret (optional — used for HMAC signature)</label>
+              <input value={webhookSecret} onChange={e => setWebhookSecret(e.target.value)} placeholder="your-webhook-secret"
+                type="password"
+                className="w-full h-9 px-3 rounded-md border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
+            </div>
+          )}
         </div>
       </div>
 

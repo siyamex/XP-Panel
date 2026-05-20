@@ -17,6 +17,7 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/pressly/goose/v3"
 	"github.com/xp-panel/xp-panel/services/webserver/internal/handler"
+	"github.com/xp-panel/xp-panel/services/webserver/internal/service"
 )
 
 func main() {
@@ -33,7 +34,25 @@ func main() {
 	if err != nil { log.Fatalf("pgxpool: %v", err) }
 	defer pool.Close()
 
-	h := handler.New(pool)
+	// Service configuration from environment
+	nginxConfigDir  := env("NGINX_CONFIG_DIR", "/etc/nginx/sites-enabled")
+	templateDir     := env("TEMPLATE_DIR", "/etc/xp-panel/templates")
+	phpPoolDir      := env("PHP_POOL_DIR", "/etc/php/fpm/pool.d")
+	certsDir        := env("CERTS_DIR", "/etc/xp-panel/certs")
+	acmeEmail       := env("ACME_EMAIL", "admin@example.com")
+	staging         := env("ACME_STAGING", "true") == "true" // default staging in dev
+	dryRun          := env("WEBSERVER_DRY_RUN", "false") != "false"
+
+	nginxSvc := service.NewNginxService(nginxConfigDir, templateDir, dryRun)
+	phpSvc   := service.NewPHPService(phpPoolDir, dryRun)
+	sslSvc   := service.NewSSLService(pool, nginxSvc, certsDir, acmeEmail, staging)
+
+	// Start SSL auto-renewal background task
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go sslSvc.StartAutoRenewal(ctx)
+
+	h := handler.New(pool, nginxSvc, phpSvc, sslSvc)
 	app := fiber.New(fiber.Config{
 		AppName: "XP-Panel WebServer Service",
 		ReadTimeout: 30 * time.Second, WriteTimeout: 30 * time.Second,
@@ -62,16 +81,68 @@ func main() {
 	api.Get("/ssl",             h.ListSSL)
 	api.Post("/ssl/issue",      h.IssueSSL)
 	api.Delete("/ssl/:id",      h.DeleteSSL)
-	api.Get("/php",             h.ListPHP)
-	api.Put("/php/:vhostId",    h.UpdatePHP)
+	api.Get("/php",                          h.ListPHP)
+	api.Put("/php/:vhostId",                 h.UpdatePHP)
+	api.Get("/php/:vhostId/ini",             h.GetPHPIni)
+	api.Put("/php/:vhostId/ini",             h.UpdatePHPIni)
+	api.Get("/php/:vhostId/opcache",         h.GetOPcacheStatus)
+	api.Post("/php/:vhostId/opcache/reset",  h.ResetOPcache)
+
+	// SSL CSR + custom import
+	api.Post("/ssl/csr",    h.GenerateCSR)
+	api.Post("/ssl/import", h.ImportCustomSSL)
+
+	// Cron jobs
+	api.Get("/cron",          h.ListCronJobs)
+	api.Post("/cron",         h.CreateCronJob)
+	api.Put("/cron/:id",      h.UpdateCronJob)
+	api.Delete("/cron/:id",   h.DeleteCronJob)
+	api.Post("/cron/:id/toggle", h.ToggleCronJob)
+
+	// FTP accounts
+	api.Get("/ftp",                  h.ListFTPAccounts)
+	api.Post("/ftp",                 h.CreateFTPAccount)
+	api.Put("/ftp/:id/password",     h.UpdateFTPPassword)
+	api.Delete("/ftp/:id",           h.DeleteFTPAccount)
+	api.Post("/ftp/:id/toggle",      h.ToggleFTPAccount)
+
+	// Subdomains
+	api.Get("/subdomains",        h.ListSubdomains)
+	api.Post("/subdomains",       h.CreateSubdomain)
+	api.Delete("/subdomains/:id", h.DeleteSubdomain)
+
+	// Redirects
+	api.Get("/redirects",        h.ListRedirects)
+	api.Post("/redirects",       h.CreateRedirect)
+	api.Delete("/redirects/:id", h.DeleteRedirect)
+
+	// Error pages
+	api.Get("/error-pages",  h.ListErrorPages)
+	api.Post("/error-pages", h.UpsertErrorPage)
+
+	// Directory privacy
+	api.Get("/privacy",        h.ListDirectoryPrivacy)
+	api.Post("/privacy",       h.CreateDirectoryPrivacy)
+	api.Delete("/privacy/:id", h.DeleteDirectoryPrivacy)
+
+	// SSH keys
+	api.Get("/ssh-keys",        h.ListSSHKeys)
+	api.Post("/ssh-keys",       h.AddSSHKey)
+	api.Delete("/ssh-keys/:id", h.DeleteSSHKey)
+
+	// MySQL remote access
+	api.Get("/mysql-remote",        h.ListMySQLRemoteAccess)
+	api.Post("/mysql-remote",       h.AddMySQLRemoteAccess)
+	api.Delete("/mysql-remote/:id", h.DeleteMySQLRemoteAccess)
 
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	go func() {
 		<-quit
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		_ = app.ShutdownWithContext(ctx)
+		cancel()
+		shutCtx, shutCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer shutCancel()
+		_ = app.ShutdownWithContext(shutCtx)
 	}()
 	log.Printf("WebServer service listening on :%s", port)
 	if err := app.Listen(":" + port); err != nil { log.Fatalf("listen: %v", err) }

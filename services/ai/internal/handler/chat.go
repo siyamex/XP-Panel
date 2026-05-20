@@ -2,11 +2,8 @@ package handler
 
 import (
 	"bufio"
-	"bytes"
 	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"os"
 	"strings"
 	"time"
@@ -15,12 +12,14 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/xpanel/ai/internal/domain"
+	"github.com/xpanel/ai/internal/llm"
+	"github.com/xpanel/ai/internal/tools"
 )
 
 type ChatHandler struct {
-	db           *pgxpool.Pool
-	anthropicKey string
-	openaiKey    string
+	db     *pgxpool.Pool
+	llm    *llm.Router
+	tools  *tools.Registry
 }
 
 type historyItem struct {
@@ -30,9 +29,9 @@ type historyItem struct {
 
 func New(db *pgxpool.Pool) *ChatHandler {
 	return &ChatHandler{
-		db:           db,
-		anthropicKey: os.Getenv("ANTHROPIC_API_KEY"),
-		openaiKey:    os.Getenv("OPENAI_API_KEY"),
+		db:    db,
+		llm:   llm.NewRouter(os.Getenv("ANTHROPIC_API_KEY"), os.Getenv("OPENAI_API_KEY")),
+		tools: tools.New(db),
 	}
 }
 
@@ -151,19 +150,46 @@ func (h *ChatHandler) Chat(c *fiber.Ctx) error {
 	return h.syncResponse(c, convID, model, history)
 }
 
+const systemPrompt = `You are XP-Panel AI, an expert server administrator assistant embedded in a web hosting control panel.
+You help users manage domains, SSL certificates, databases, email, DNS, backups, security, and deployments.
+When asked about server metrics, use the get_server_metrics tool. When asked about domains, use list_domains.
+Be concise and practical. Format shell commands in code blocks. Prefer actionable advice over generic explanations.`
+
 func (h *ChatHandler) syncResponse(c *fiber.Ctx, convID, model string, history []historyItem) error {
-	response := h.callLLM(model, history)
+	msgs := make([]llm.Message, len(history))
+	for i, m := range history {
+		msgs[i] = llm.Message{Role: m.Role, Content: m.Content}
+	}
+
+	resp, err := h.llm.Complete(c.Context(), model, systemPrompt, msgs, h.tools.Definitions())
+	var content string
+	if err != nil {
+		content = h.cannedResponse(history)
+	} else {
+		// Execute any tool calls and append results
+		content = resp.Content
+		for _, tc := range resp.ToolCalls {
+			result, _ := h.tools.Execute(c.Context(), tc.Name, tc.Input)
+			// Re-call LLM with tool result
+			msgs = append(msgs, llm.Message{Role: "assistant", Content: fmt.Sprintf("[Calling tool: %s]", tc.Name)})
+			msgs = append(msgs, llm.Message{Role: "user", Content: fmt.Sprintf("Tool result for %s: %s", tc.Name, result)})
+			followUp, err2 := h.llm.Complete(c.Context(), model, systemPrompt, msgs, nil)
+			if err2 == nil {
+				content = followUp.Content
+			}
+		}
+	}
 
 	msgID := uuid.New().String()
 	_, _ = h.db.Exec(c.Context(),
 		`INSERT INTO ai_messages (id, conversation_id, role, content) VALUES ($1,$2,'assistant',$3)`,
-		msgID, convID, response)
+		msgID, convID, content)
 	_, _ = h.db.Exec(c.Context(),
 		`UPDATE ai_conversations SET updated_at=NOW() WHERE id=$1`, convID)
 
 	return c.JSON(fiber.Map{
 		"conversation_id": convID,
-		"message":         fiber.Map{"id": msgID, "role": "assistant", "content": response},
+		"message":         fiber.Map{"id": msgID, "role": "assistant", "content": content},
 	})
 }
 
@@ -173,122 +199,68 @@ func (h *ChatHandler) streamResponse(c *fiber.Ctx, convID, model string, history
 	c.Set("Connection", "keep-alive")
 	c.Set("X-Conversation-ID", convID)
 
-	response := h.callLLM(model, history)
-	words := strings.Fields(response)
+	msgs := make([]llm.Message, len(history))
+	for i, m := range history {
+		msgs[i] = llm.Message{Role: m.Role, Content: m.Content}
+	}
 
 	c.Context().SetBodyStreamWriter(func(w *bufio.Writer) {
+		ch := make(chan llm.StreamChunk, 64)
+		errCh := make(chan error, 1)
+
+		go func() {
+			errCh <- h.llm.Stream(c.Context(), model, systemPrompt, msgs, ch)
+		}()
+
 		full := strings.Builder{}
-		for i, word := range words {
-			chunk := word
-			if i < len(words)-1 {
-				chunk += " "
+		for {
+			select {
+			case chunk, ok := <-ch:
+				if !ok {
+					goto done
+				}
+				if chunk.Done {
+					goto done
+				}
+				full.WriteString(chunk.Delta)
+				data, _ := json.Marshal(domain.SSEChunk{Type: "delta", Content: chunk.Delta})
+				fmt.Fprintf(w, "data: %s\n\n", data)
+				_ = w.Flush()
+			case <-errCh:
+				// LLM failed — fall through to done
+				goto done
 			}
-			full.WriteString(chunk)
-			data, _ := json.Marshal(domain.SSEChunk{Type: "delta", Content: chunk})
-			fmt.Fprintf(w, "data: %s\n\n", data)
-			w.Flush()
-			time.Sleep(30 * time.Millisecond)
+		}
+	done:
+		content := full.String()
+		if content == "" {
+			content = h.cannedResponse(history)
+			// stream canned response word by word
+			words := strings.Fields(content)
+			for i, word := range words {
+				chunk := word
+				if i < len(words)-1 {
+					chunk += " "
+				}
+				data, _ := json.Marshal(domain.SSEChunk{Type: "delta", Content: chunk})
+				fmt.Fprintf(w, "data: %s\n\n", data)
+				_ = w.Flush()
+				time.Sleep(20 * time.Millisecond)
+			}
 		}
 
 		msgID := uuid.New().String()
 		_, _ = h.db.Exec(c.Context(),
 			`INSERT INTO ai_messages (id, conversation_id, role, content) VALUES ($1,$2,'assistant',$3)`,
-			msgID, convID, full.String())
+			msgID, convID, content)
 		_, _ = h.db.Exec(c.Context(),
 			`UPDATE ai_conversations SET updated_at=NOW() WHERE id=$1`, convID)
 
 		doneData, _ := json.Marshal(domain.SSEChunk{Type: "done", ID: msgID})
 		fmt.Fprintf(w, "data: %s\n\n", doneData)
-		w.Flush()
+		_ = w.Flush()
 	})
 	return nil
-}
-
-func (h *ChatHandler) callLLM(model string, history []historyItem) string {
-	if h.anthropicKey != "" {
-		if resp := h.callAnthropic(model, history); resp != "" {
-			return resp
-		}
-	}
-	if h.openaiKey != "" {
-		if resp := h.callOpenAI(history); resp != "" {
-			return resp
-		}
-	}
-	return h.cannedResponse(history)
-}
-
-func (h *ChatHandler) callAnthropic(model string, history []historyItem) string {
-	type anthropicMsg struct {
-		Role    string `json:"role"`
-		Content string `json:"content"`
-	}
-	msgs := make([]anthropicMsg, len(history))
-	for i, m := range history {
-		msgs[i] = anthropicMsg{Role: m.Role, Content: m.Content}
-	}
-
-	body, _ := json.Marshal(map[string]any{
-		"model":      model,
-		"max_tokens": 1024,
-		"system":     "You are XP-Panel AI, an expert server administrator assistant. Help users manage their hosting panel, diagnose issues, and optimize performance.",
-		"messages":   msgs,
-	})
-
-	req, _ := http.NewRequest("POST", "https://api.anthropic.com/v1/messages", bytes.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("x-api-key", h.anthropicKey)
-	req.Header.Set("anthropic-version", "2023-06-01")
-
-	client := &http.Client{Timeout: 30 * time.Second}
-	resp, err := client.Do(req)
-	if err != nil || resp.StatusCode != 200 {
-		return ""
-	}
-	defer resp.Body.Close()
-
-	var result struct {
-		Content []struct {
-			Text string `json:"text"`
-		} `json:"content"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil || len(result.Content) == 0 {
-		return ""
-	}
-	return result.Content[0].Text
-}
-
-func (h *ChatHandler) callOpenAI(history []historyItem) string {
-	type oaMsg struct {
-		Role    string `json:"role"`
-		Content string `json:"content"`
-	}
-	msgs := []oaMsg{{Role: "system", Content: "You are XP-Panel AI, an expert server administrator assistant."}}
-	for _, m := range history {
-		msgs = append(msgs, oaMsg{Role: m.Role, Content: m.Content})
-	}
-
-	body, _ := json.Marshal(map[string]any{"model": "gpt-4o-mini", "messages": msgs, "max_tokens": 1024})
-	req, _ := http.NewRequest("POST", "https://api.openai.com/v1/chat/completions", bytes.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+h.openaiKey)
-
-	client := &http.Client{Timeout: 30 * time.Second}
-	resp, err := client.Do(req)
-	if err != nil || resp.StatusCode != 200 {
-		return ""
-	}
-	defer resp.Body.Close()
-
-	var result struct {
-		Choices []struct {
-			Message struct{ Content string } `json:"message"`
-		} `json:"choices"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil || len(result.Choices) == 0 {
-		return ""
-	}
-	return result.Choices[0].Message.Content
 }
 
 func (h *ChatHandler) cannedResponse(history []historyItem) string {
@@ -301,14 +273,12 @@ func (h *ChatHandler) cannedResponse(history []historyItem) string {
 	switch {
 	case strings.Contains(lower, "cpu") || strings.Contains(lower, "memory") || strings.Contains(lower, "ram"):
 		return "Based on your current metrics, I can see elevated resource usage. Here are my recommendations:\n\n1. **Check running processes**: Use `top` or `htop` to identify resource-heavy processes\n2. **Review PHP-FPM pools**: Reduce `pm.max_children` if memory is tight\n3. **Enable OPcache**: This can reduce CPU usage by 30-50% for PHP applications\n4. **Consider adding swap**: If RAM usage exceeds 85%, adding 2GB swap can prevent OOM kills\n\nWould you like me to analyze specific metrics or help configure any of these settings?"
-	case strings.Contains(lower, "nginx") || strings.Contains(lower, "apache") || strings.Contains(lower, "web server"):
-		return "I can help you optimize your web server configuration. Common performance improvements include:\n\n```nginx\n# Enable gzip compression\ngzip on;\ngzip_types text/plain text/css application/json application/javascript;\n\n# Browser caching\nlocation ~* \\.(jpg|jpeg|png|gif|ico|css|js)$ {\n    expires 30d;\n    add_header Cache-Control \"public, immutable\";\n}\n```\n\nWould you like me to review your specific vhost configuration?"
-	case strings.Contains(lower, "ssl") || strings.Contains(lower, "certificate") || strings.Contains(lower, "https"):
-		return "SSL/TLS configuration is critical for security. Here's what I recommend:\n\n1. **Renew certificates**: Use the SSL manager to auto-renew with Let's Encrypt\n2. **Force HTTPS**: Add a 301 redirect from HTTP to HTTPS\n3. **Security headers**: Add `Strict-Transport-Security`, `X-Content-Type-Options`, and `X-Frame-Options`\n4. **TLS version**: Ensure you're using TLS 1.2+ and disable SSLv3/TLS 1.0\n\nYour current SSL grade can be checked in the Security section. Need help with any of these?"
+	case strings.Contains(lower, "ssl") || strings.Contains(lower, "certificate"):
+		return "SSL/TLS configuration is critical for security. Enable Let's Encrypt certificates via the SSL manager. Ensure TLS 1.2+ is enforced and add HSTS headers."
 	case strings.Contains(lower, "backup"):
-		return "Your backup strategy should follow the 3-2-1 rule:\n\n- **3** copies of data\n- **2** different storage media\n- **1** offsite copy\n\nI recommend:\n1. Daily incremental backups (fast, low storage)\n2. Weekly full backups retained for 4 weeks\n3. S3/B2 offsite storage with AES-256-GCM encryption\n\nYour backup service supports all of these. Want me to help you set up a backup schedule?"
+		return "Your backup strategy should follow the 3-2-1 rule: 3 copies, 2 media types, 1 offsite. The backup service supports S3, B2, and local storage with AES-256-GCM encryption."
 	default:
-		return fmt.Sprintf("I understand you're asking about: \"%s\"\n\nAs your XP-Panel AI assistant, I can help with:\n- **Server diagnostics** — CPU, memory, disk analysis\n- **Web server config** — NGINX, Apache optimization\n- **Security hardening** — firewall rules, fail2ban, SSL\n- **Database tuning** — slow query analysis, index optimization\n- **Deployment automation** — CI/CD pipeline setup\n- **General Linux administration** — any server management task\n\nCould you provide more details about what you're trying to accomplish?", last)
+		return fmt.Sprintf("I understand you're asking about: \"%s\"\n\nCould you provide more details? I can help with server metrics, web server config, SSL, databases, backups, and deployments.", last)
 	}
 }
 
@@ -331,4 +301,3 @@ func (h *ChatHandler) Analyze(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"analysis": analysis, "type": req.Type})
 }
 
-var _ = io.Discard

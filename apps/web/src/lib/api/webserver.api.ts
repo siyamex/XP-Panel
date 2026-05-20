@@ -67,4 +67,21 @@ export const webserverApi = {
 
   updatePHP: (vhostId: string, php_version: string | null) =>
     api.put<{ message: string }>(`/webserver/php/${vhostId}`, { php_version }),
+
+  getPHPIni: (vhostId: string) =>
+    api.get<{ settings: Record<string, string> }>(`/webserver/php/${vhostId}/ini`),
+
+  updatePHPIni: (vhostId: string, settings: Record<string, string>) =>
+    api.put<{ updated: boolean }>(`/webserver/php/${vhostId}/ini`, settings),
+
+  getOPcacheStatus: (vhostId: string) =>
+    api.get<{
+      enabled: boolean
+      cache_full: boolean
+      memory_usage: { used_memory: number; free_memory: number; wasted_memory: number; current_wasted_percentage: number }
+      statistics: { num_cached_scripts: number; hits: number; misses: number; opcache_hit_rate: number }
+    }>(`/webserver/php/${vhostId}/opcache`),
+
+  resetOPcache: (vhostId: string) =>
+    api.post<{ reset: boolean; message: string }>(`/webserver/php/${vhostId}/opcache/reset`, {}),
 }

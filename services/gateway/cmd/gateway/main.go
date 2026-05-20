@@ -137,6 +137,13 @@ func main() {
 	// Admin routes
 	authenticated.All("/admin/*", middleware.RequireRole("admin", "super_admin"), prx.To(cfg.AuthURL))
 
+	// Agent ingest — authenticated by X-Agent-Key inside monitoring service, not JWT
+	app.Post("/api/v1/agent/metrics", prx.To(cfg.MonitoringURL))
+
+	// Passkey authentication (public — no JWT)
+	app.Post("/api/v1/auth/passkeys/authenticate/begin", authRL, prx.To(cfg.AuthURL))
+	app.Post("/api/v1/auth/passkeys/authenticate/finish", authRL, prx.To(cfg.AuthURL))
+
 	// ── WebSocket routes ──────────────────────────────────────────────────────
 	app.Get("/ws/metrics/:serverId", jwtAuth, prx.To(cfg.MonitoringURL))
 	app.Get("/ws/logs/:deploymentId", jwtAuth, prx.To(cfg.DevOpsURL))

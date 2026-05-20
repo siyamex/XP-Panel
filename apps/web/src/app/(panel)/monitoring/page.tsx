@@ -2,12 +2,13 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Activity, Cpu, MemoryStick, HardDrive, Wifi, AlertTriangle, CheckCircle2, Clock } from 'lucide-react'
+import { Cpu, MemoryStick, HardDrive, Wifi, AlertTriangle, CheckCircle2, Clock, Server } from 'lucide-react'
 import { monitoringApi } from '@/lib/api/monitoring.api'
 import type { ServerMetrics, Incident } from '@/types/monitoring.types'
 import { cn } from '@/lib/utils/cn'
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import Link from 'next/link'
+import { useSearchParams } from 'next/navigation'
 
 function MetricCard({ label, value, max, unit, icon: Icon, color }: {
   label: string; value: number; max: number; unit: string; icon: any; color: string
@@ -38,13 +39,21 @@ function MetricCard({ label, value, max, unit, icon: Icon, color }: {
 }
 
 export default function MonitoringPage() {
+  const searchParams = useSearchParams()
+  const serverID = searchParams.get('server') ?? 'local'
+
   const [wsMetrics, setWsMetrics] = useState<ServerMetrics | null>(null)
   const [history, setHistory] = useState<Array<{ time: string; cpu: number; ram: number; disk: number }>>([])
   const wsRef = useRef<WebSocket | null>(null)
 
+  const { data: serversData } = useQuery({
+    queryKey: ['monitored-servers'],
+    queryFn: () => monitoringApi.listServers().then(r => r.data),
+  })
+
   const { data: apiMetrics } = useQuery({
-    queryKey: ['metrics-current'],
-    queryFn: () => monitoringApi.getCurrentMetrics(),
+    queryKey: ['metrics-current', serverID],
+    queryFn: () => monitoringApi.getCurrentMetrics(serverID === 'local' ? undefined : serverID),
     select: (r) => r.data,
     refetchInterval: 10000,
   })
@@ -58,7 +67,10 @@ export default function MonitoringPage() {
   const metrics = wsMetrics ?? apiMetrics
 
   useEffect(() => {
-    const wsUrl = (process.env.NEXT_PUBLIC_WS_URL ?? 'ws://localhost:8080') + '/api/v1/metrics/stream'
+    setWsMetrics(null)
+    setHistory([])
+    const params = serverID !== 'local' ? `?server_id=${serverID}` : ''
+    const wsUrl = (process.env.NEXT_PUBLIC_WS_URL ?? 'ws://localhost:8080') + '/api/v1/monitoring/metrics/stream' + params
     const ws = new WebSocket(wsUrl)
     wsRef.current = ws
 
@@ -79,7 +91,7 @@ export default function MonitoringPage() {
     }
 
     return () => ws.close()
-  }, [])
+  }, [serverID])
 
   const incidents = incidentsData?.incidents ?? []
   const openIncidents = incidents.filter((i) => i.status === 'open')
@@ -91,8 +103,29 @@ export default function MonitoringPage() {
           <h1 className="text-2xl font-bold">Monitoring</h1>
           <p className="text-sm text-muted-foreground mt-0.5">Real-time server metrics and alerting</p>
         </div>
-        <div className="flex gap-2">
-          <Link href="/monitoring/alerts" className="px-3 py-2 rounded-lg border border-border text-sm hover:bg-muted transition-colors">Alert Rules</Link>
+        <div className="flex gap-2 items-center">
+          {serversData?.servers.length ? (
+            <select
+              value={serverID}
+              onChange={e => {
+                const url = new URL(window.location.href)
+                if (e.target.value === 'local') url.searchParams.delete('server')
+                else url.searchParams.set('server', e.target.value)
+                window.history.pushState({}, '', url)
+                window.dispatchEvent(new PopStateEvent('popstate'))
+              }}
+              className="border border-border rounded-lg px-3 py-2 text-sm bg-background"
+            >
+              <option value="local">Local (this server)</option>
+              {serversData.servers.map(s => (
+                <option key={s.id} value={s.id}>{s.hostname}</option>
+              ))}
+            </select>
+          ) : null}
+          <Link href="/monitoring/servers" className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-border text-sm hover:bg-muted transition-colors">
+            <Server className="h-3.5 w-3.5" />Servers
+          </Link>
+          <Link href="/monitoring/alerts" className="px-3 py-2 rounded-lg border border-border text-sm hover:bg-muted transition-colors">Alerts</Link>
           <Link href="/monitoring/logs" className="px-3 py-2 rounded-lg border border-border text-sm hover:bg-muted transition-colors">Logs</Link>
         </div>
       </div>

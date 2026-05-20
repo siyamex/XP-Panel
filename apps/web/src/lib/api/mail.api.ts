@@ -56,4 +56,27 @@ export const mailApi = {
 
   deleteCatchAll: (domain: string) =>
     api.delete(`/mail/catchall?domain=${encodeURIComponent(domain)}`),
+
+  listAliases: (domain?: string) =>
+    api.get<{
+      aliases: Array<{ id: string; source: string; destination: string; catch_all: boolean; active: boolean; created_at: string }>
+      total: number
+    }>(`/mail/aliases${domain ? `?domain=${encodeURIComponent(domain)}` : ''}`),
+
+  createAlias: (data: { source: string; destination: string; catch_all?: boolean }) =>
+    api.post<{ id: string }>('/mail/aliases', data),
+
+  deleteAlias: (id: string) =>
+    api.delete(`/mail/aliases/${id}`),
+
+  getDMARCRecord: (domain: string, policy?: 'none' | 'quarantine' | 'reject') =>
+    api.get<{
+      domain: string
+      record: string
+      dns_name: string
+      dns_type: string
+      dns_value: string
+      policy: string
+      guidelines: string
+    }>(`/mail/dmarc?domain=${encodeURIComponent(domain)}${policy ? `&policy=${policy}` : ''}`),
 }

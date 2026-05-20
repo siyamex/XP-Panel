@@ -3,6 +3,7 @@ module github.com/xp-panel/xp-panel/services/webserver
 go 1.23
 
 require (
+	github.com/go-acme/lego/v4 v4.17.4
 	github.com/gofiber/fiber/v2 v2.52.5
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.6.0

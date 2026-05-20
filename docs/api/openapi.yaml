@@ -1,0 +1,483 @@
+openapi: 3.1.0
+info:
+  title: XP-Panel API
+  version: 1.0.0
+  description: >
+    XP-Panel is an enterprise-grade open-source web hosting control panel.
+    All authenticated endpoints require a Bearer JWT token in the Authorization header.
+  license:
+    name: AGPL-3.0
+    url: https://www.gnu.org/licenses/agpl-3.0.html
+  contact:
+    name: XP-Panel Support
+    url: https://github.com/xp-panel/xp-panel
+
+servers:
+  - url: http://localhost:8080/api/v1
+    description: Local development (via gateway)
+
+security:
+  - bearerAuth: []
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: object
+          properties:
+            message: { type: string }
+            code: { type: integer }
+
+    TokenPair:
+      type: object
+      properties:
+        accessToken: { type: string }
+        refreshToken: { type: string }
+        expiresAt: { type: string, format: date-time }
+        tokenType: { type: string, example: Bearer }
+
+    User:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        email: { type: string, format: email }
+        username: { type: string }
+        roles: { type: array, items: { type: string } }
+        orgId: { type: string, format: uuid }
+
+    DNSZone:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        kind: { type: string, enum: [Native, Master, Slave] }
+        serial: { type: integer }
+        status: { type: string }
+        createdAt: { type: string, format: date-time }
+
+    DNSRecord:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        type: { type: string }
+        content: { type: string }
+        ttl: { type: integer }
+        priority: { type: integer }
+        disabled: { type: boolean }
+
+    Notification:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        type: { type: string }
+        title: { type: string }
+        message: { type: string }
+        link: { type: string, nullable: true }
+        read: { type: boolean }
+        readAt: { type: string, format: date-time, nullable: true }
+        createdAt: { type: string, format: date-time }
+
+paths:
+  # ── Auth ──────────────────────────────────────────────────────────────────────
+  /auth/register:
+    post:
+      tags: [Auth]
+      summary: Register organization and admin user
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [orgName, orgSlug, email, username, password]
+              properties:
+                orgName: { type: string }
+                orgSlug: { type: string }
+                email: { type: string, format: email }
+                username: { type: string }
+                password: { type: string, minLength: 8 }
+      responses:
+        '201':
+          description: Registration successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/TokenPair' }
+                  message: { type: string }
+        '409': { description: User or org already exists }
+
+  /auth/login:
+    post:
+      tags: [Auth]
+      summary: Login with email and password
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string }
+      responses:
+        '200':
+          description: Login successful or MFA required
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/TokenPair' }
+                  - type: object
+                    properties:
+                      mfaRequired: { type: boolean }
+                      tempToken: { type: string }
+
+  /auth/refresh:
+    post:
+      tags: [Auth]
+      summary: Refresh access token
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                refreshToken: { type: string }
+      responses:
+        '200':
+          description: New token pair issued
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/TokenPair' }
+
+  /auth/logout:
+    post:
+      tags: [Auth]
+      summary: Invalidate current session
+      responses:
+        '204': { description: Logged out }
+
+  /auth/me:
+    get:
+      tags: [Auth]
+      summary: Get current user profile
+      responses:
+        '200':
+          description: User profile
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/User' }
+    patch:
+      tags: [Auth]
+      summary: Update user profile
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                firstName: { type: string }
+                lastName: { type: string }
+                timezone: { type: string }
+                language: { type: string }
+      responses:
+        '200':
+          description: Profile updated
+
+  /auth/sessions:
+    get:
+      tags: [Auth]
+      summary: List active sessions
+      responses:
+        '200':
+          description: Active sessions
+    delete:
+      tags: [Auth]
+      summary: Revoke all sessions except current
+      responses:
+        '200':
+          description: Sessions revoked
+
+  /auth/sessions/{id}:
+    delete:
+      tags: [Auth]
+      summary: Revoke a specific session
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '204': { description: Session revoked }
+
+  /auth/oauth/{provider}:
+    get:
+      tags: [Auth]
+      summary: Initiate OAuth2 login
+      security: []
+      parameters:
+        - name: provider
+          in: path
+          required: true
+          schema: { type: string, enum: [github, google, gitlab] }
+      responses:
+        '302': { description: Redirect to OAuth provider }
+
+  # ── DNS ───────────────────────────────────────────────────────────────────────
+  /dns/zones:
+    get:
+      tags: [DNS]
+      summary: List DNS zones
+      responses:
+        '200':
+          description: List of zones
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  zones:
+                    type: array
+                    items: { $ref: '#/components/schemas/DNSZone' }
+    post:
+      tags: [DNS]
+      summary: Create DNS zone
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string }
+                kind: { type: string, enum: [Native, Master, Slave] }
+                nameservers: { type: array, items: { type: string } }
+      responses:
+        '201': { description: Zone created }
+
+  /dns/zones/{id}:
+    get:
+      tags: [DNS]
+      summary: Get DNS zone details
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Zone details
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DNSZone' }
+    delete:
+      tags: [DNS]
+      summary: Delete DNS zone
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '204': { description: Zone deleted }
+
+  /dns/zones/{zoneId}/records:
+    get:
+      tags: [DNS]
+      summary: List DNS records in zone
+      parameters:
+        - name: zoneId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Records
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  records:
+                    type: array
+                    items: { $ref: '#/components/schemas/DNSRecord' }
+    post:
+      tags: [DNS]
+      summary: Create DNS record
+      parameters:
+        - name: zoneId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, type, content]
+              properties:
+                name: { type: string }
+                type: { type: string, enum: [A, AAAA, CNAME, MX, TXT, NS, SRV, CAA, PTR] }
+                content: { type: string }
+                ttl: { type: integer }
+                priority: { type: integer }
+      responses:
+        '201': { description: Record created }
+
+  /dns/templates:
+    get:
+      tags: [DNS]
+      summary: List DNS record templates
+      security: []
+      responses:
+        '200':
+          description: Available templates
+
+  /dns/propagation:
+    get:
+      tags: [DNS]
+      summary: Check DNS propagation across global resolvers
+      parameters:
+        - name: domain
+          in: query
+          required: true
+          schema: { type: string }
+        - name: type
+          in: query
+          schema: { type: string, default: A }
+      responses:
+        '200':
+          description: Propagation results
+
+  # ── Notifications ─────────────────────────────────────────────────────────────
+  /notifications:
+    get:
+      tags: [Notifications]
+      summary: List notifications
+      parameters:
+        - name: unread
+          in: query
+          schema: { type: boolean }
+      responses:
+        '200':
+          description: Notifications list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  notifications:
+                    type: array
+                    items: { $ref: '#/components/schemas/Notification' }
+
+  /notifications/{id}/read:
+    put:
+      tags: [Notifications]
+      summary: Mark notification as read
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200': { description: Marked as read }
+
+  /notifications/read-all:
+    put:
+      tags: [Notifications]
+      summary: Mark all notifications as read
+      responses:
+        '200': { description: All marked as read }
+
+  /notifications/unread-count:
+    get:
+      tags: [Notifications]
+      summary: Get unread notification count
+      responses:
+        '200':
+          description: Count
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  count: { type: integer }
+
+  /notifications/preferences:
+    get:
+      tags: [Notifications]
+      summary: Get notification preferences
+      responses:
+        '200': { description: Preferences }
+    put:
+      tags: [Notifications]
+      summary: Update notification preferences
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                email_enabled: { type: boolean }
+                slack_enabled: { type: boolean }
+                slack_webhook: { type: string }
+                telegram_chat_id: { type: string }
+                discord_enabled: { type: boolean }
+                discord_webhook: { type: string }
+                webhook_enabled: { type: boolean }
+                webhook_url: { type: string }
+                webhook_secret: { type: string }
+                alerts_enabled: { type: boolean }
+                backups_enabled: { type: boolean }
+                security_enabled: { type: boolean }
+                billing_enabled: { type: boolean }
+      responses:
+        '200': { description: Preferences updated }
+
+  /notifications/dispatch:
+    post:
+      tags: [Notifications]
+      summary: Dispatch a notification (internal service-to-service)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [title, message]
+              properties:
+                organization_id: { type: string, format: uuid }
+                user_id: { type: string, format: uuid, nullable: true }
+                type: { type: string, enum: [info, warning, error, success] }
+                title: { type: string }
+                message: { type: string }
+                link: { type: string, nullable: true }
+      responses:
+        '201': { description: Notification dispatched }

@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"log"
 	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/cors"
@@ -14,6 +16,7 @@ import (
 	"github.com/pressly/goose/v3"
 	"github.com/xpanel/backup/internal/handler"
 	"github.com/xpanel/backup/internal/storage"
+	"github.com/xpanel/backup/internal/worker"
 )
 
 func main() {
@@ -37,6 +40,19 @@ func main() {
 	}
 	store := storage.NewLocalStorage(backupDir)
 	bh := handler.NewBackupHandler(pool, store)
+
+	// Start asynq worker pool in background
+	redisAddr := os.Getenv("REDIS_URL")
+	if redisAddr == "" {
+		redisAddr = "localhost:6379"
+	}
+	workerPool := worker.NewPool(pool, redisAddr)
+	go func() {
+		if err := workerPool.Start(); err != nil {
+			log.Printf("worker pool stopped: %v", err)
+		}
+	}()
+	defer workerPool.Shutdown()
 
 	app := fiber.New()
 	app.Use(logger.New(), cors.New())
@@ -67,8 +83,17 @@ func main() {
 	if port == "" {
 		port = "8087"
 	}
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		<-quit
+		_ = app.Shutdown()
+	}()
+
 	log.Printf("Backup service running on :%s", port)
-	log.Fatal(app.Listen(":" + port))
+	if err := app.Listen(":" + port); err != nil {
+		log.Fatalf("listen: %v", err)
+	}
 }
 
 func runMigrations(db *sql.DB) {

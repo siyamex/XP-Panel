@@ -29,8 +29,8 @@ var (
 	ErrAccountLocked      = errors.New("account is temporarily locked")
 	ErrAccountPending     = errors.New("account is pending email verification")
 	ErrMFARequired        = errors.New("MFA verification required")
-	ErrUserExists         = errors.New("user with this email or username already exists")
-	ErrOrgSlugTaken       = errors.New("organization slug is already taken")
+	ErrUserExists   = errors.New("user with this email or username already exists")
+	ErrOrgSlugTaken = errors.New("organization slug is already taken")
 )
 
 type UserRepository interface {
@@ -274,6 +274,72 @@ func (s *AuthService) Refresh(ctx context.Context, refreshToken string) (*domain
 
 func (s *AuthService) Logout(ctx context.Context, sessionID uuid.UUID) error {
 	return s.sessions.DeleteByID(ctx, sessionID)
+}
+
+type OAuthInput struct {
+	Provider string
+	Email    string
+	Name     string
+	IP       string
+	UA       string
+}
+
+// OAuthLogin finds an existing user by email or creates a new one (org = email domain).
+func (s *AuthService) OAuthLogin(ctx context.Context, in OAuthInput) (*domain.TokenPair, error) {
+	user, err := s.users.FindByEmail(ctx, strings.ToLower(in.Email))
+	if err != nil {
+		// Auto-register: derive org slug from email domain
+		parts := strings.SplitN(in.Email, "@", 2)
+		slug := strings.ReplaceAll(parts[len(parts)-1], ".", "-")
+		slug = slug + "-" + uuid.New().String()[:8]
+
+		firstName := in.Name
+		if idx := strings.Index(in.Name, " "); idx > 0 {
+			firstName = in.Name[:idx]
+		}
+		username := strings.ToLower(strings.ReplaceAll(firstName, " ", "")) + "-" + uuid.New().String()[:6]
+
+		_, err2 := s.Register(ctx, RegisterInput{
+			OrgName:  in.Name + "'s Organization",
+			OrgSlug:  slug,
+			Email:    in.Email,
+			Username: username,
+			Password: uuid.New().String(), // random unusable password
+		})
+		if err2 != nil {
+			return nil, err2
+		}
+		user, err = s.users.FindByEmail(ctx, strings.ToLower(in.Email))
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	// Mark user active (OAuth = verified email)
+	if user.Status == domain.UserStatusPending {
+		_ = s.users.ResetFailedLogin(ctx, user.ID)
+	}
+	_ = s.users.UpdateLastLogin(ctx, user.ID, in.IP)
+
+	roles, _ := s.users.GetRoles(ctx, user.ID)
+	user.Roles = roles
+
+	sessionID := uuid.New()
+	pair, refreshToken, err := s.jwt.IssueTokenPair(user, sessionID, true)
+	if err != nil {
+		return nil, err
+	}
+	session := &domain.Session{
+		ID:               sessionID,
+		UserID:           user.ID,
+		TokenHash:        hashToken(pair.AccessToken),
+		RefreshTokenHash: ptr(hashToken(refreshToken)),
+		IPAddress:        &in.IP,
+		UserAgent:        &in.UA,
+		ExpiresAt:        pair.ExpiresAt,
+	}
+	_ = s.sessions.Create(ctx, session)
+	return pair, nil
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

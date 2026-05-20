@@ -25,4 +25,23 @@ export const dnsApi = {
 
   deleteRecord: (zoneId: string, recordId: string) =>
     api.delete(`/dns/zones/${zoneId}/records/${recordId}`),
+
+  listTemplates: () =>
+    api.get<{
+      templates: Array<{
+        id: string
+        name: string
+        records: Array<{ type: string; name: string; value: string; ttl: number; priority?: number }>
+      }>
+    }>('/dns/templates'),
+
+  checkPropagation: (domain: string, type: string = 'A') =>
+    api.get<{
+      domain: string
+      type: string
+      results: Array<{ resolver: string; location: string; values: string[]; error?: string; ok: boolean }>
+      propagated: number
+      total: number
+      percentage: string
+    }>(`/dns/propagation?domain=${encodeURIComponent(domain)}&type=${type}`),
 }

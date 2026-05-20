@@ -14,6 +14,7 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/pressly/goose/v3"
 	"github.com/xpanel/billing/internal/handler"
+	"github.com/xpanel/billing/internal/worker"
 )
 
 var version = "dev"
@@ -42,15 +43,19 @@ func main() {
 	}
 	sqlDB.Close()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-	defer cancel()
-	db, err := pgxpool.New(ctx, dbURL)
+	db, err := pgxpool.New(context.Background(), dbURL)
 	if err != nil {
 		log.Fatalf("db connect: %v", err)
 	}
 	defer db.Close()
 
 	h := handler.New(db)
+
+	// Start suspension worker
+	workerCtx, workerCancel := context.WithCancel(context.Background())
+	defer workerCancel()
+	notificationURL := os.Getenv("NOTIFICATION_SERVICE_URL")
+	go worker.NewSuspensionWorker(db, notificationURL).Start(workerCtx)
 
 	app := fiber.New(fiber.Config{
 		AppName:      "XP-Panel billing " + version,

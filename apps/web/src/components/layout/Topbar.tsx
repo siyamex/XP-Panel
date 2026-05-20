@@ -35,7 +35,7 @@ const breadcrumbMap: Record<string, string> = {
 export function Topbar() {
   const pathname = usePathname();
   const { setTheme, theme } = useTheme();
-  const { toggleCommandPalette } = useUIStore();
+  const { toggleCommandPalette, locale, setLocale } = useUIStore();
   const { user, logout } = useAuthStore();
 
   const segments = pathname.split("/").filter(Boolean);
@@ -77,6 +77,15 @@ export function Topbar() {
           <kbd className="hidden sm:inline text-[10px] font-mono bg-background border border-border rounded px-1 py-0.5">
             ⌘K
           </kbd>
+        </button>
+
+        {/* Language toggle */}
+        <button
+          onClick={() => setLocale(locale === 'en' ? 'ar' : 'en')}
+          title={locale === 'en' ? 'Switch to Arabic' : 'التبديل إلى الإنجليزية'}
+          className="w-9 h-9 rounded-lg flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted transition-colors text-xs font-bold"
+        >
+          {locale === 'en' ? 'ع' : 'EN'}
         </button>
 
         {/* Theme toggle */}

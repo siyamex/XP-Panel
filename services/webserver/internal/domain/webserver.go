@@ -47,6 +47,8 @@ type SSLCertificate struct {
 	ChallengeType  string
 	Status         string
 	LastError      string
+	CertPath       string
+	KeyPath        string
 	CreatedAt      time.Time
 	UpdatedAt      time.Time
 }

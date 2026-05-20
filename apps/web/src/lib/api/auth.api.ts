@@ -82,4 +82,43 @@ export const authApi = {
     const { data } = await apiClient.post("/auth/mfa/disable", { code });
     return data;
   },
+
+  listSessions: async () => {
+    const { data } = await apiClient.get<{
+      sessions: Array<{
+        id: string;
+        ip_address: string | null;
+        user_agent: string | null;
+        created_at: string;
+        last_active_at: string;
+        expires_at: string;
+        is_current: boolean;
+      }>;
+    }>("/auth/sessions");
+    return data.sessions;
+  },
+
+  revokeSession: async (id: string) => {
+    await apiClient.delete(`/auth/sessions/${id}`);
+  },
+
+  revokeAllSessions: async () => {
+    const { data } = await apiClient.delete<{ revoked: number }>("/auth/sessions");
+    return data;
+  },
+
+  updateProfile: async (input: {
+    firstName?: string;
+    lastName?: string;
+    timezone?: string;
+    language?: string;
+  }) => {
+    const { data } = await apiClient.patch("/auth/me", input);
+    return data;
+  },
+
+  oauthRedirect: (provider: "github" | "google" | "gitlab") => {
+    const apiBase = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
+    window.location.href = `${apiBase}/api/v1/auth/oauth/${provider}`;
+  },
 };

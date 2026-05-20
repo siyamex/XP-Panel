@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 
+	_ "github.com/ClickHouse/clickhouse-go/v2" // register clickhouse driver
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/cors"
 	"github.com/gofiber/fiber/v2/middleware/logger"
@@ -15,6 +16,7 @@ import (
 	"github.com/pressly/goose/v3"
 	"github.com/xpanel/monitoring/internal/alerting"
 	"github.com/xpanel/monitoring/internal/handler"
+	"github.com/xpanel/monitoring/internal/ingester"
 )
 
 func main() {
@@ -32,12 +34,29 @@ func main() {
 	sqlDB := stdlib.OpenDBFromPool(pool)
 	runMigrations(sqlDB)
 
+	// ClickHouse connection (optional — degrades gracefully if absent)
+	var chDB *sql.DB
+	if chDSN := os.Getenv("CLICKHOUSE_DSN"); chDSN != "" {
+		chDB, _ = sql.Open("clickhouse", chDSN)
+		if err := chDB.Ping(); err != nil {
+			log.Printf("ClickHouse unavailable (%v) — metrics stored in Postgres only", err)
+			chDB = nil
+		} else {
+			log.Println("ClickHouse connected")
+		}
+	}
+
+	handler.SetPool(pool)
 	mh := handler.NewMetricsHandler(pool)
+	ih := handler.NewIngestHandler(pool)
 
 	// Start alerting engine in background
 	alertCtx, alertCancel := context.WithCancel(context.Background())
 	defer alertCancel()
 	go alerting.NewEngine(pool).Start(alertCtx)
+
+	// Start ClickHouse ingester in background
+	go ingester.New(pool, chDB).Start(alertCtx)
 
 	app := fiber.New()
 	app.Use(logger.New(), cors.New())
@@ -61,6 +80,21 @@ func main() {
 	mon.Put("/incidents/:id/acknowledge", mh.AcknowledgeIncident)
 	mon.Put("/incidents/:id/resolve", mh.ResolveIncident)
 	mon.Get("/remediation/logs", mh.ListRemediationLogs)
+
+	// Bandwidth + disk usage per domain
+	bh := handler.NewBandwidthHandler(pool)
+	mon.Get("/bandwidth/:domain",   bh.GetDomainBandwidth)
+	mon.Get("/disk/:domain",        bh.GetDomainDiskUsage)
+	mon.Get("/logs/:domain",        bh.GetDomainAccessLogs)
+
+	// Monitored servers + time-series metrics
+	mon.Get("/servers",             ih.ListMonitoredServers)
+	mon.Post("/servers",            ih.RegisterServer)
+	mon.Delete("/servers/:id",      ih.DeleteServer)
+	mon.Get("/servers/:id/metrics", ih.GetServerMetrics)
+
+	// Agent ingest endpoint (authenticated via X-Agent-Key, not JWT)
+	app.Post("/api/v1/agent/metrics", ih.PushMetrics)
 
 	app.Get("/health", func(c *fiber.Ctx) error {
 		return c.JSON(fiber.Map{"status": "ok", "service": "monitoring"})

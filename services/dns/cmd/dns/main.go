@@ -84,6 +84,13 @@ func main() {
 		records.Delete("/:id", recordH.Delete)
 	}
 
+	// DNS tools
+	for _, prefix := range []string{"/dns", "/dns/dns"} {
+		dns := api.Group(prefix)
+		dns.Get("/templates", handler.ListTemplates)
+		dns.Get("/propagation", handler.CheckPropagation)
+	}
+
 
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)

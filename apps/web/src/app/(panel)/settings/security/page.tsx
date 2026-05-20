@@ -1,23 +1,32 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Shield, Smartphone, Key, Monitor, Trash2, QrCode, CheckCircle2, AlertTriangle } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { format } from 'date-fns'
+import { authApi } from '@/lib/api/auth.api'
 
-const MOCK_SESSIONS = [
-  { id: '1', device: 'Chrome on macOS', ip: '192.168.1.100', location: 'New York, US', last_active: new Date(Date.now() - 60000), current: true },
-  { id: '2', device: 'Firefox on Windows', ip: '203.0.113.45', location: 'London, UK', last_active: new Date(Date.now() - 3600000 * 2), current: false },
-  { id: '3', device: 'Safari on iPhone', ip: '198.51.100.22', location: 'Tokyo, JP', last_active: new Date(Date.now() - 3600000 * 24), current: false },
-]
+type Session = {
+  id: string
+  ip_address: string | null
+  user_agent: string | null
+  created_at: string
+  last_active_at: string
+  expires_at: string
+  is_current: boolean
+}
 
 export default function SecurityPage() {
   const [mfaEnabled, setMfaEnabled] = useState(false)
   const [showMfaSetup, setShowMfaSetup] = useState(false)
   const [mfaCode, setMfaCode] = useState('')
-  const [sessions, setSessions] = useState(MOCK_SESSIONS)
+  const [sessions, setSessions] = useState<Session[]>([])
   const [showPasswordForm, setShowPasswordForm] = useState(false)
   const [passwords, setPasswords] = useState({ current: '', new: '', confirm: '' })
+
+  useEffect(() => {
+    authApi.listSessions().then(setSessions).catch(() => {})
+  }, [])
   const [passwordSaved, setPasswordSaved] = useState(false)
 
   const handleEnableMfa = () => {
@@ -37,7 +46,19 @@ export default function SecurityPage() {
     }
   }
 
-  const revokeSession = (id: string) => setSessions(s => s.filter(x => x.id !== id))
+  const revokeSession = async (id: string) => {
+    try {
+      await authApi.revokeSession(id)
+      setSessions(s => s.filter(x => x.id !== id))
+    } catch {}
+  }
+
+  const revokeAll = async () => {
+    try {
+      await authApi.revokeAllSessions()
+      setSessions(s => s.filter(x => x.is_current))
+    } catch {}
+  }
 
   return (
     <div className="space-y-6 max-w-2xl">
@@ -185,20 +206,21 @@ export default function SecurityPage() {
               <p className="text-xs text-muted-foreground">{sessions.length} active session{sessions.length !== 1 ? 's' : ''}</p>
             </div>
           </div>
-          <button onClick={() => setSessions(s => s.filter(x => x.current))} className="text-xs text-destructive hover:underline">Revoke all others</button>
+          <button onClick={revokeAll} className="text-xs text-destructive hover:underline">Revoke all others</button>
         </div>
 
         <div className="space-y-3">
+          {sessions.length === 0 && <p className="text-sm text-muted-foreground py-3">No active sessions found.</p>}
           {sessions.map(session => (
             <div key={session.id} className="flex items-center justify-between py-3 border-t">
               <div className="space-y-0.5">
                 <div className="flex items-center gap-2">
-                  <span className="text-sm font-medium">{session.device}</span>
-                  {session.current && <span className="text-xs bg-green-500/10 text-green-600 dark:text-green-400 px-1.5 py-0.5 rounded font-medium">Current</span>}
+                  <span className="text-sm font-medium">{session.user_agent ? session.user_agent.slice(0, 40) : 'Unknown device'}</span>
+                  {session.is_current && <span className="text-xs bg-green-500/10 text-green-600 dark:text-green-400 px-1.5 py-0.5 rounded font-medium">Current</span>}
                 </div>
-                <p className="text-xs text-muted-foreground">{session.ip} · {session.location} · {format(session.last_active, 'MMM d, HH:mm')}</p>
+                <p className="text-xs text-muted-foreground">{session.ip_address ?? 'Unknown IP'} · Last active {format(new Date(session.last_active_at), 'MMM d, HH:mm')}</p>
               </div>
-              {!session.current && (
+              {!session.is_current && (
                 <button onClick={() => revokeSession(session.id)} className="text-muted-foreground hover:text-destructive transition-colors">
                   <Trash2 className="h-4 w-4" />
                 </button>

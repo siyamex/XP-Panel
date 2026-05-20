@@ -7,7 +7,8 @@ import {
   LayoutDashboard, Globe, Server, Mail, FolderOpen, Database,
   Shield, Activity, Package, CreditCard, Bot, Code2, Container,
   Settings, Users, ChevronLeft, ChevronRight, Store, Bell,
-  Map, Zap, HardDrive, Lock,
+  Map, Zap, HardDrive, Lock, Clock, Wifi, ArrowRight, KeyRound,
+  Terminal, BarChart2,
 } from "lucide-react";
 import { cn } from "@/lib/utils/cn";
 import { useUIStore } from "@/lib/stores/ui.store";
@@ -25,12 +26,27 @@ const navSections = [
     label: "Hosting",
     items: [
       { href: "/domains", icon: Globe, label: "Domains" },
+      { href: "/subdomains", icon: Globe, label: "Subdomains" },
       { href: "/email", icon: Mail, label: "Email" },
+      { href: "/email/autoresponders", icon: Mail, label: "Autoresponders" },
+      { href: "/email/filters", icon: Mail, label: "Email Filters" },
+      { href: "/email/queue", icon: Mail, label: "Mail Queue" },
+      { href: "/email/webmail", icon: Globe, label: "Webmail" },
       { href: "/files", icon: FolderOpen, label: "File Manager" },
       { href: "/databases", icon: Database, label: "Databases" },
       { href: "/php", icon: Code2, label: "PHP" },
       { href: "/webserver", icon: Server, label: "Web Server" },
       { href: "/ssl", icon: Lock, label: "SSL / TLS" },
+    ],
+  },
+  {
+    label: "Domain Tools",
+    items: [
+      { href: "/redirects", icon: ArrowRight, label: "Redirects" },
+      { href: "/cron", icon: Clock, label: "Cron Jobs" },
+      { href: "/ftp", icon: Wifi, label: "FTP Accounts" },
+      { href: "/ssh-keys", icon: KeyRound, label: "SSH Keys" },
+      { href: "/terminal", icon: Terminal, label: "SSH Terminal" },
     ],
   },
   {
@@ -45,6 +61,8 @@ const navSections = [
     label: "Security",
     items: [
       { href: "/security", icon: Shield, label: "Security" },
+      { href: "/security/geoip", icon: Map, label: "GeoIP Blocking" },
+      { href: "/security/waf", icon: Shield, label: "WAF / ModSec" },
     ],
   },
   {
@@ -56,10 +74,20 @@ const navSections = [
     ],
   },
   {
-    label: "Intelligence",
+    label: "Analytics",
     items: [
+      { href: "/monitoring/servers", icon: Server, label: "Servers" },
+      { href: "/monitoring/bandwidth", icon: BarChart2, label: "Bandwidth" },
+      { href: "/monitoring/disk", icon: HardDrive, label: "Disk Usage" },
       { href: "/monitoring/geomap", icon: Map, label: "GeoMap" },
       { href: "/notifications", icon: Bell, label: "Notifications" },
+    ],
+  },
+  {
+    label: "Tools",
+    items: [
+      { href: "/dns/propagation", icon: Zap, label: "DNS Propagation" },
+      { href: "/email/dmarc", icon: Shield, label: "DMARC" },
     ],
   },
   {

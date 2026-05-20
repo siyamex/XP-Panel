@@ -3,10 +3,11 @@ package domain
 import "time"
 
 type PipelineStep struct {
-	Name    string   `json:"name"`
-	Image   string   `json:"image"`
-	Commands []string `json:"commands"`
-	EnvVars []string `json:"env"`
+	Name      string   `json:"name"`
+	Image     string   `json:"image"`
+	Commands  []string `json:"commands"`
+	EnvVars   []string `json:"env"`
+	DependsOn []string `json:"depends_on,omitempty"`
 }
 
 type StepResult struct {

@@ -17,6 +17,8 @@ type NotificationHandler struct {
 	email    *provider.EmailProvider
 	slack    *provider.SlackProvider
 	telegram *provider.TelegramProvider
+	discord  *provider.DiscordProvider
+	webhook  *provider.WebhookProvider
 }
 
 func New(db *pgxpool.Pool) *NotificationHandler {
@@ -25,6 +27,8 @@ func New(db *pgxpool.Pool) *NotificationHandler {
 		email:    provider.NewEmailProvider(),
 		slack:    provider.NewSlackProvider(),
 		telegram: provider.NewTelegramProvider(),
+		discord:  provider.NewDiscordProvider(),
+		webhook:  provider.NewWebhookProvider(),
 	}
 }
 
@@ -119,14 +123,17 @@ func (h *NotificationHandler) GetPreferences(c *fiber.Ctx) error {
 	err := h.db.QueryRow(c.Context(),
 		`SELECT id, organization_id, user_id, email_enabled, slack_enabled,
 		        COALESCE(slack_webhook,''), COALESCE(telegram_chat_id,''),
+		        COALESCE(discord_enabled,FALSE), COALESCE(discord_webhook,''),
+		        COALESCE(webhook_enabled,FALSE), COALESCE(webhook_url,''), COALESCE(webhook_secret,''),
 		        alerts_enabled, backups_enabled, security_enabled, billing_enabled
 		 FROM notification_preferences WHERE organization_id=$1 AND user_id=$2`,
 		orgID, userID,
 	).Scan(&prefs.ID, &prefs.OrganizationID, &prefs.UserID, &prefs.EmailEnabled,
 		&prefs.SlackEnabled, &prefs.SlackWebhook, &prefs.TelegramChatID,
+		&prefs.DiscordEnabled, &prefs.DiscordWebhook,
+		&prefs.WebhookEnabled, &prefs.WebhookURL, &prefs.WebhookSecret,
 		&prefs.AlertsEnabled, &prefs.BackupsEnabled, &prefs.SecurityEnabled, &prefs.BillingEnabled)
 	if err != nil {
-		// Return sensible defaults when no row exists yet
 		prefs = domain.NotificationPreferences{
 			OrganizationID:  orgID,
 			UserID:          userID,
@@ -155,14 +162,18 @@ func (h *NotificationHandler) UpdatePreferences(c *fiber.Ctx) error {
 	_, err := h.db.Exec(c.Context(),
 		`INSERT INTO notification_preferences
 		   (organization_id, user_id, email_enabled, slack_enabled, slack_webhook, telegram_chat_id,
+		    discord_enabled, discord_webhook, webhook_enabled, webhook_url, webhook_secret,
 		    alerts_enabled, backups_enabled, security_enabled, billing_enabled)
-		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
 		 ON CONFLICT (organization_id, user_id) DO UPDATE SET
 		   email_enabled=$3, slack_enabled=$4, slack_webhook=$5, telegram_chat_id=$6,
-		   alerts_enabled=$7, backups_enabled=$8, security_enabled=$9, billing_enabled=$10,
+		   discord_enabled=$7, discord_webhook=$8, webhook_enabled=$9, webhook_url=$10, webhook_secret=$11,
+		   alerts_enabled=$12, backups_enabled=$13, security_enabled=$14, billing_enabled=$15,
 		   updated_at=NOW()`,
 		orgID, userID, req.EmailEnabled, req.SlackEnabled,
 		nullStr(req.SlackWebhook), nullStr(req.TelegramChatID),
+		req.DiscordEnabled, nullStr(req.DiscordWebhook),
+		req.WebhookEnabled, nullStr(req.WebhookURL), nullStr(req.WebhookSecret),
 		req.AlertsEnabled, req.BackupsEnabled, req.SecurityEnabled, req.BillingEnabled,
 	)
 	if err != nil {
@@ -212,9 +223,13 @@ func (h *NotificationHandler) dispatchExternal(orgID, title, message string) {
 	ctx := context.Background()
 	var prefs domain.NotificationPreferences
 	err := h.db.QueryRow(ctx,
-		`SELECT email_enabled, slack_enabled, COALESCE(slack_webhook,''), COALESCE(telegram_chat_id,'')
+		`SELECT email_enabled, slack_enabled, COALESCE(slack_webhook,''), COALESCE(telegram_chat_id,''),
+		        COALESCE(discord_enabled,FALSE), COALESCE(discord_webhook,''),
+		        COALESCE(webhook_enabled,FALSE), COALESCE(webhook_url,''), COALESCE(webhook_secret,'')
 		 FROM notification_preferences WHERE organization_id = $1 LIMIT 1`, orgID,
-	).Scan(&prefs.EmailEnabled, &prefs.SlackEnabled, &prefs.SlackWebhook, &prefs.TelegramChatID)
+	).Scan(&prefs.EmailEnabled, &prefs.SlackEnabled, &prefs.SlackWebhook, &prefs.TelegramChatID,
+		&prefs.DiscordEnabled, &prefs.DiscordWebhook,
+		&prefs.WebhookEnabled, &prefs.WebhookURL, &prefs.WebhookSecret)
 	if err != nil {
 		return
 	}
@@ -226,6 +241,12 @@ func (h *NotificationHandler) dispatchExternal(orgID, title, message string) {
 	}
 	if prefs.TelegramChatID != "" {
 		_ = h.telegram.Send(prefs.TelegramChatID, text)
+	}
+	if prefs.DiscordEnabled && prefs.DiscordWebhook != "" {
+		_ = h.discord.Send(prefs.DiscordWebhook, title, message)
+	}
+	if prefs.WebhookEnabled && prefs.WebhookURL != "" {
+		_ = h.webhook.Send(prefs.WebhookURL, prefs.WebhookSecret, title, message)
 	}
 }
 

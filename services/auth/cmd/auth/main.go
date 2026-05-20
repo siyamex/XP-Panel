@@ -54,6 +54,14 @@ func main() {
 	// ── Handlers ─────────────────────────────────────────────────────────────
 	authHandler := handler.NewAuthHandler(authSvc, jwtSvc)
 	mfaHandler := handler.NewMFAHandler(mfaSvc, jwtSvc)
+	oauthHandler := handler.NewOAuthHandler(authSvc, jwtSvc, rdb)
+	userHandler := handler.NewUserHandler(pool, jwtSvc)
+
+	rpID := os.Getenv("WEBAUTHN_RP_ID")
+	if rpID == "" { rpID = "localhost" }
+	rpOrigin := os.Getenv("WEBAUTHN_RP_ORIGIN")
+	if rpOrigin == "" { rpOrigin = "http://localhost:3000" }
+	passkeyHandler := handler.NewPasskeyHandler(pool, rpID, rpOrigin)
 
 	// ── Fiber app ─────────────────────────────────────────────────────────────
 	app := fiber.New(fiber.Config{
@@ -88,13 +96,31 @@ func main() {
 	v1.Post("/refresh", authHandler.Refresh)
 	v1.Post("/mfa/verify", mfaHandler.Verify)
 
+	// OAuth routes
+	v1.Get("/oauth/:provider", oauthHandler.Redirect)
+	v1.Get("/oauth/:provider/callback", oauthHandler.Callback)
+
 	// Authenticated routes
 	auth := v1.Use(jwtMiddleware(jwtSvc))
 	auth.Post("/logout", authHandler.Logout)
 	auth.Get("/me", authHandler.Me)
+	auth.Patch("/me", userHandler.UpdateProfile)
 	auth.Post("/mfa/totp/setup", mfaHandler.SetupTOTP)
 	auth.Post("/mfa/totp/confirm", mfaHandler.ConfirmTOTP)
 	auth.Post("/mfa/disable", mfaHandler.Disable)
+	auth.Get("/sessions", userHandler.ListSessions)
+	auth.Delete("/sessions/:id", userHandler.RevokeSession)
+	auth.Delete("/sessions", userHandler.RevokeAllSessions)
+
+	// Passkeys / WebAuthn (authenticated)
+	auth.Get("/passkeys", passkeyHandler.ListPasskeys)
+	auth.Delete("/passkeys/:id", passkeyHandler.DeletePasskey)
+	auth.Get("/passkeys/register/begin", passkeyHandler.BeginRegistration)
+	auth.Post("/passkeys/register/finish", passkeyHandler.FinishRegistration)
+
+	// Passkey authentication (public — no JWT yet)
+	v1.Post("/passkeys/authenticate/begin", passkeyHandler.BeginAuthentication)
+	v1.Post("/passkeys/authenticate/finish", passkeyHandler.FinishAuthentication)
 
 	// ── Start / graceful shutdown ─────────────────────────────────────────────
 	quit := make(chan os.Signal, 1)

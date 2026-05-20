@@ -44,6 +44,16 @@ func main() {
 	v1.Get("/security/blocklist", sh.ListBlocklist)
 	v1.Post("/security/blocklist", sh.BlockIP)
 	v1.Delete("/security/blocklist/:id", sh.UnblockIP)
+	v1.Get("/security/geoip", sh.ListGeoIPBlocks)
+	v1.Post("/security/geoip", sh.AddGeoIPBlock)
+	v1.Delete("/security/geoip/:countryCode", sh.RemoveGeoIPBlock)
+	v1.Get("/security/geoip/lookup", sh.LookupGeoIP)
+
+	// ModSecurity WAF
+	v1.Get("/security/modsec/status",        sh.GetModSecStatus)
+	v1.Put("/security/modsec/mode",          sh.SetModSecMode)
+	v1.Get("/security/modsec/rules",         sh.ListModSecRules)
+	v1.Post("/security/modsec/rules/toggle", sh.ToggleModSecRule)
 
 	app.Get("/health", func(c *fiber.Ctx) error {
 		return c.JSON(fiber.Map{"status": "ok", "service": "security"})

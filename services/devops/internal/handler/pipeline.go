@@ -1,21 +1,25 @@
 package handler
 
 import (
+	"bufio"
 	"encoding/json"
-	"math/rand"
+	"fmt"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/valyala/fasthttp"
 	"github.com/xpanel/devops/internal/domain"
+	"github.com/xpanel/devops/internal/service"
 )
 
 type PipelineHandler struct {
-	db *pgxpool.Pool
+	db  *pgxpool.Pool
+	svc *service.PipelineService
 }
 
 func New(db *pgxpool.Pool) *PipelineHandler {
-	return &PipelineHandler{db: db}
+	return &PipelineHandler{db: db, svc: service.New(db)}
 }
 
 func (h *PipelineHandler) ListPipelines(c *fiber.Ctx) error {
@@ -110,66 +114,20 @@ func (h *PipelineHandler) DeletePipeline(c *fiber.Ctx) error {
 	return c.SendStatus(204)
 }
 
-// TriggerRun kicks off a pipeline run (simulated async execution)
+// TriggerRun kicks off a real pipeline run via the executor service.
 func (h *PipelineHandler) TriggerRun(c *fiber.Ctx) error {
 	pipelineID := c.Params("id")
+	triggeredBy := c.Get("X-User-ID", "manual")
 
-	// Get pipeline steps
-	var stepsJSON []byte
-	var steps []domain.PipelineStep
-	err := h.db.QueryRow(c.Context(), `SELECT steps FROM pipelines WHERE id=$1`, pipelineID).Scan(&stepsJSON)
+	runID, err := h.svc.TriggerRun(c.Context(), pipelineID, triggeredBy)
 	if err != nil {
-		return c.Status(404).JSON(fiber.Map{"error": "pipeline not found"})
-	}
-	_ = json.Unmarshal(stepsJSON, &steps)
-
-	// Simulate step results
-	results := make([]domain.StepResult, len(steps))
-	success := true
-	for i, s := range steps {
-		status := "success"
-		if rand.Float64() < 0.05 { // 5% chance of failure
-			status = "failed"
-			success = false
+		status := 500
+		if err.Error() == "pipeline not found: "+err.Error() {
+			status = 404
 		}
-		results[i] = domain.StepResult{
-			Name:     s.Name,
-			Status:   status,
-			ExitCode: 0,
-			Duration: rand.Intn(8000) + 500,
-			Output:   "Step " + s.Name + " executed successfully",
-		}
-		if status == "failed" {
-			results[i].ExitCode = 1
-			results[i].Output = "Error: command exited with code 1"
-			break
-		}
+		return c.Status(status).JSON(fiber.Map{"error": err.Error()})
 	}
-
-	finalStatus := "success"
-	if !success {
-		finalStatus = "failed"
-	}
-	resultsJSON, _ := json.Marshal(results)
-	duration := rand.Intn(120) + 10
-
-	var runID string
-	now := time.Now()
-	finishedAt := now.Add(time.Duration(duration) * time.Second)
-	err = h.db.QueryRow(c.Context(),
-		`INSERT INTO pipeline_runs (pipeline_id, status, triggered_by, commit_sha, commit_message, started_at, finished_at, duration_seconds, step_results)
-		 VALUES ($1,$2,'manual','HEAD','Triggered manually',NOW(),$3,$4,$5) RETURNING id`,
-		pipelineID, finalStatus, finishedAt, duration, resultsJSON,
-	).Scan(&runID)
-	if err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
-	}
-
-	// Update pipeline status and last_run_at
-	_, _ = h.db.Exec(c.Context(),
-		`UPDATE pipelines SET status=$1, last_run_at=NOW(), updated_at=NOW() WHERE id=$2`, finalStatus, pipelineID)
-
-	return c.Status(202).JSON(fiber.Map{"run_id": runID, "status": finalStatus})
+	return c.Status(202).JSON(fiber.Map{"run_id": runID, "status": "running"})
 }
 
 func (h *PipelineHandler) ListRuns(c *fiber.Ctx) error {
@@ -218,4 +176,52 @@ func (h *PipelineHandler) ListDeployments(c *fiber.Ctx) error {
 		deployments = append(deployments, d)
 	}
 	return c.JSON(fiber.Map{"deployments": deployments})
+}
+
+// StreamRunLogs streams step logs for a run via SSE.
+// The stream ends when the run leaves 'running' state or the client disconnects.
+func (h *PipelineHandler) StreamRunLogs(c *fiber.Ctx) error {
+	runID := c.Params("runId")
+
+	c.Set("Content-Type", "text/event-stream")
+	c.Set("Cache-Control", "no-cache")
+	c.Set("Connection", "keep-alive")
+	c.Set("X-Accel-Buffering", "no")
+
+	c.Context().SetBodyStreamWriter(fasthttp.StreamWriter(func(w *bufio.Writer) {
+		var lastID int64
+		ticker := time.NewTicker(1 * time.Second)
+		defer ticker.Stop()
+
+		ctx := c.Context()
+		for range ticker.C {
+			var status string
+			_ = h.db.QueryRow(ctx, `SELECT status FROM pipeline_runs WHERE id=$1`, runID).Scan(&status)
+
+			rows, err := h.db.Query(ctx,
+				`SELECT id, step_name, log_line FROM pipeline_run_logs
+				 WHERE run_id=$1 AND id>$2 ORDER BY id`,
+				runID, lastID)
+			if err == nil {
+				for rows.Next() {
+					var id int64
+					var stepName, logLine string
+					if err := rows.Scan(&id, &stepName, &logLine); err == nil {
+						_ = stepName
+						fmt.Fprintf(w, "data: %s\n\n", logLine)
+						lastID = id
+					}
+				}
+				rows.Close()
+				_ = w.Flush()
+			}
+
+			if status != "running" && status != "" {
+				fmt.Fprintf(w, "data: {\"done\":true,\"status\":%q}\n\n", status)
+				_ = w.Flush()
+				return
+			}
+		}
+	}))
+	return nil
 }

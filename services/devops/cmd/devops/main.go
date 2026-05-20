@@ -74,8 +74,14 @@ func main() {
 	pipelines.Delete("/:id", h.DeletePipeline)
 	pipelines.Post("/:id/run", h.TriggerRun)
 	pipelines.Get("/:id/runs", h.ListRuns)
+	pipelines.Get("/:id/runs/:runId/logs", h.StreamRunLogs)
 
 	api.Get("/devops/deployments", h.ListDeployments)
+
+	// Webhook triggers — no JWT middleware, pipeline webhook_secret used for auth
+	webhooks := api.Group("/devops/webhooks")
+	webhooks.Post("/github/:pipelineId", h.GitHubWebhook)
+	webhooks.Post("/gitlab/:pipelineId", h.GitLabWebhook)
 
 	log.Printf("devops service listening on :%s", port)
 	if err := app.Listen(":" + port); err != nil {

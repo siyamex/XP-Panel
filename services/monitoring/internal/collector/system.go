@@ -52,6 +52,17 @@ func Collect(serverID string) (*domain.ServerMetrics, error) {
 		m.NetOutMBs = float64(netStats[0].BytesSent) / 1024 / 1024
 	}
 
+	// Disk I/O (aggregate across all physical disks)
+	if diskIO, err := disk.IOCounters(); err == nil {
+		var readBytes, writeBytes uint64
+		for _, s := range diskIO {
+			readBytes += s.ReadBytes
+			writeBytes += s.WriteBytes
+		}
+		m.DiskReadMBs = float64(readBytes) / 1024 / 1024
+		m.DiskWriteMBs = float64(writeBytes) / 1024 / 1024
+	}
+
 	// Process count
 	if procs, err := process.Pids(); err == nil {
 		m.Processes = uint64(len(procs))

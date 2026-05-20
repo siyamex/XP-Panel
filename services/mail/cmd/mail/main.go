@@ -70,6 +70,28 @@ func main() {
 	api.Get("/mail/catchall",                     h.GetCatchAll)
 	api.Post("/mail/catchall",                    h.SetCatchAll)
 	api.Delete("/mail/catchall",                  h.DeleteCatchAll)
+	api.Get("/mail/aliases",                      h.ListAliases)
+	api.Post("/mail/aliases",                     h.CreateAlias)
+	api.Delete("/mail/aliases/:id",               h.DeleteAlias)
+	api.Get("/mail/dmarc",                        h.GetDMARC)
+
+	// Autoresponders
+	api.Get("/mail/autoresponders",        h.ListAutoresponders)
+	api.Post("/mail/autoresponders",       h.CreateAutoresponder)
+	api.Put("/mail/autoresponders/:id",    h.UpdateAutoresponder)
+	api.Delete("/mail/autoresponders/:id", h.DeleteAutoresponder)
+
+	// Email filters
+	api.Get("/mail/filters",        h.ListEmailFilters)
+	api.Post("/mail/filters",       h.CreateEmailFilter)
+	api.Put("/mail/filters/:id",    h.UpdateEmailFilter)
+	api.Delete("/mail/filters/:id", h.DeleteEmailFilter)
+
+	// Mail queue
+	api.Get("/mail/queue",              h.ListMailQueue)
+	api.Post("/mail/queue/flush",       h.FlushMailQueue)
+	api.Delete("/mail/queue/:id",       h.DeleteMailQueueEntry)
+	api.Delete("/mail/queue",           h.DeleteAllMailQueue)
 
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)

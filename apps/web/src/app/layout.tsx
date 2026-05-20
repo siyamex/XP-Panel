@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { ThemeProvider } from "@/components/providers/theme-provider";
 import { QueryProvider } from "@/components/providers/query-provider";
+import { LocaleProvider } from "@/components/providers/locale-provider";
 import { Toaster } from "sonner";
 import "./globals.css";
 
@@ -61,8 +62,10 @@ export default function RootLayout({
           disableTransitionOnChange
         >
           <QueryProvider>
-            {children}
-            <Toaster position="bottom-right" richColors closeButton />
+            <LocaleProvider>
+              {children}
+              <Toaster position="bottom-right" richColors closeButton />
+            </LocaleProvider>
           </QueryProvider>
         </ThemeProvider>
       </body>

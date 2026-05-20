@@ -76,3 +76,12 @@ type UpdateRecordRequest struct {
 	Priority int    `json:"priority" validate:"min=0"`
 	Disabled bool   `json:"disabled"`
 }
+
+type RecordTemplate struct {
+	Type     string `json:"type"`
+	Name     string `json:"name"`
+	Value    string `json:"value"`
+	TTL      int    `json:"ttl"`
+	Priority int    `json:"priority,omitempty"`
+	Proxied  bool   `json:"proxied,omitempty"`
+}

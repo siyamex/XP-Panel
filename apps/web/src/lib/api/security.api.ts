@@ -28,4 +28,28 @@ export const securityApi = {
 
   unblockIP: (id: string) =>
     api.delete(`/security/blocklist/${id}`),
+
+  listGeoIPBlocks: () =>
+    api.get<{
+      blocks: Array<{ id: string; country_code: string; country_name: string; action: string; created_at: string }>
+      total: number
+    }>('/security/geoip'),
+
+  addGeoIPBlock: (data: { country_code: string; country_name: string; action?: 'block' | 'log' }) =>
+    api.post<{ id: string }>('/security/geoip', data),
+
+  removeGeoIPBlock: (countryCode: string) =>
+    api.delete(`/security/geoip/${countryCode}`),
+
+  lookupGeoIP: (ip: string) =>
+    api.get<{
+      ip: string
+      country_code: string
+      country_name: string
+      city: string
+      region: string
+      org: string
+      latitude: number
+      longitude: number
+    }>(`/security/geoip/lookup?ip=${encodeURIComponent(ip)}`),
 }

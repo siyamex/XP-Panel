@@ -10,6 +10,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/logger"
 	"github.com/gofiber/fiber/v2/middleware/recover"
+	fiberws "github.com/gofiber/websocket/v2"
 	"github.com/xp-panel/xp-panel/services/filemanager/internal/handler"
 	"github.com/xp-panel/xp-panel/services/filemanager/internal/service"
 )
@@ -67,6 +68,9 @@ func main() {
 	// Archive
 	files.Post("/compress", archiveH.Compress)
 	files.Post("/extract", archiveH.Extract)
+
+	// SSH Terminal (WebSocket)
+	api.Get("/terminal", handler.TerminalHTTPUpgrade, fiberws.New(handler.SSHTerminalWS))
 
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)

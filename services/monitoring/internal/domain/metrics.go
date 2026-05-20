@@ -3,22 +3,24 @@ package domain
 import "time"
 
 type ServerMetrics struct {
-	ServerID    string    `json:"server_id"`
-	Timestamp   time.Time `json:"timestamp"`
-	CPUPercent  float64   `json:"cpu_percent"`
-	RAMPercent  float64   `json:"ram_percent"`
-	DiskPercent float64   `json:"disk_percent"`
-	NetInMBs    float64   `json:"net_in_mb_s"`
-	NetOutMBs   float64   `json:"net_out_mb_s"`
-	LoadAvg1    float64   `json:"load_avg_1"`
-	LoadAvg5    float64   `json:"load_avg_5"`
-	LoadAvg15   float64   `json:"load_avg_15"`
-	Processes   uint64    `json:"processes"`
-	RAMTotalMB  uint64    `json:"ram_total_mb"`
-	RAMUsedMB   uint64    `json:"ram_used_mb"`
-	DiskTotalMB uint64    `json:"disk_total_mb"`
-	DiskUsedMB  uint64    `json:"disk_used_mb"`
-	Uptime      uint64    `json:"uptime"`
+	ServerID      string    `json:"server_id"`
+	Timestamp     time.Time `json:"timestamp"`
+	CPUPercent    float64   `json:"cpu_percent"`
+	RAMPercent    float64   `json:"ram_percent"`
+	DiskPercent   float64   `json:"disk_percent"`
+	NetInMBs      float64   `json:"net_in_mb_s"`
+	NetOutMBs     float64   `json:"net_out_mb_s"`
+	DiskReadMBs   float64   `json:"disk_read_mb_s"`
+	DiskWriteMBs  float64   `json:"disk_write_mb_s"`
+	LoadAvg1      float64   `json:"load_avg_1"`
+	LoadAvg5      float64   `json:"load_avg_5"`
+	LoadAvg15     float64   `json:"load_avg_15"`
+	Processes     uint64    `json:"processes"`
+	RAMTotalMB    uint64    `json:"ram_total_mb"`
+	RAMUsedMB     uint64    `json:"ram_used_mb"`
+	DiskTotalMB   uint64    `json:"disk_total_mb"`
+	DiskUsedMB    uint64    `json:"disk_used_mb"`
+	Uptime        uint64    `json:"uptime"`
 }
 
 type AlertRule struct {
