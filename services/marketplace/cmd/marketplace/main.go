@@ -69,6 +69,7 @@ func main() {
 	api.Get("/apps/:slug", h.GetApp)
 	api.Post("/install", h.InstallApp)
 	api.Get("/installations", h.ListInstallations)
+	api.Get("/installations/:id", h.GetInstallation)
 	api.Delete("/installations/:id", h.UninstallApp)
 
 	log.Printf("marketplace service listening on :%s", port)

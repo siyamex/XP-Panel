@@ -36,9 +36,14 @@ type Installation struct {
 type InstallRequest struct {
 	AppSlug     string `json:"app_slug"`
 	DomainID    string `json:"domain_id"`
+	Domain      string `json:"domain"`
 	InstallPath string `json:"install_path"`
 	AdminUser   string `json:"admin_user"`
 	AdminPass   string `json:"admin_pass"`
 	AdminEmail  string `json:"admin_email"`
 	SiteName    string `json:"site_name"`
+	DBName      string `json:"db_name"`
+	DBUser      string `json:"db_user"`
+	DBPass      string `json:"db_pass"`
+	DBHost      string `json:"db_host"`
 }

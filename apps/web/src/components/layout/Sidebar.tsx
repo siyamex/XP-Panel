@@ -71,6 +71,8 @@ const navSections = [
       { href: "/billing", icon: CreditCard, label: "Billing" },
       { href: "/marketplace", icon: Store, label: "Marketplace" },
       { href: "/reseller", icon: Users, label: "Reseller" },
+      { href: "/reseller/users", icon: Users, label: "Reseller Users" },
+      { href: "/reseller/packages", icon: Package, label: "Packages" },
     ],
   },
   {

@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"os/exec"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -16,6 +15,7 @@ import (
 
 type Engine struct {
 	pool            *pgxpool.Pool
+	remediator      *Remediator
 	notificationURL string
 	interval        time.Duration
 }
@@ -23,6 +23,7 @@ type Engine struct {
 func NewEngine(pool *pgxpool.Pool) *Engine {
 	return &Engine{
 		pool:            pool,
+		remediator:      NewRemediator(pool),
 		notificationURL: os.Getenv("NOTIFICATION_SERVICE_URL"),
 		interval:        30 * time.Second,
 	}
@@ -144,64 +145,14 @@ func (e *Engine) metricValue(metric string, m *domain.SystemMetrics) float64 {
 func (e *Engine) remediate(ctx context.Context, incidentID, orgID string, cfg domain.RemediationConfig) {
 	log.Printf("running remediation action=%s for incident=%s", cfg.Action, incidentID)
 
-	var status, output string
-	switch cfg.Action {
-	case "restart_service":
-		svc := cfg.Target
-		if svc == "" {
-			svc = "nginx"
-		}
-		cmd := exec.CommandContext(ctx, "systemctl", "restart", svc)
-		out, err := cmd.CombinedOutput()
-		output = string(out)
-		if err != nil {
-			status = "failed"
-			log.Printf("remediation failed: %v", err)
-		} else {
-			status = "success"
-		}
+	// Map legacy config to the new Remediator action format
+	params := map[string]any{"service": cfg.Target, "name": cfg.Target}
+	action := RemediationAction{Type: cfg.Action, Params: params}
 
-	case "clear_cache":
-		cmd := exec.CommandContext(ctx, "sync")
-		out, _ := cmd.CombinedOutput()
-		output = string(out)
-		// Drop page cache
-		exec.CommandContext(ctx, "sh", "-c", "echo 3 > /proc/sys/vm/drop_caches").Run()
-		status = "success"
+	// Use the Remediator for richer execution + logging
+	e.remediator.Execute(ctx, incidentID, orgID, action)
 
-	case "kill_process":
-		if cfg.Target == "" {
-			status = "failed"
-			output = "no target process specified"
-		} else {
-			cmd := exec.CommandContext(ctx, "pkill", "-f", cfg.Target)
-			out, err := cmd.CombinedOutput()
-			output = string(out)
-			if err != nil {
-				status = "failed"
-			} else {
-				status = "success"
-			}
-		}
-
-	case "send_notification":
-		status = "success"
-		output = "notification dispatched"
-
-	default:
-		status = "skipped"
-		output = fmt.Sprintf("unknown action: %s", cfg.Action)
-	}
-
-	// Record remediation log
+	// Auto-resolve incident after any remediation attempt
 	_, _ = e.pool.Exec(ctx,
-		`INSERT INTO remediation_logs (incident_id, organization_id, action, target, status, output)
-		 VALUES ($1, $2, $3, $4, $5, $6)`,
-		incidentID, orgID, cfg.Action, cfg.Target, status, output)
-
-	if status == "success" {
-		// Auto-resolve incident after successful remediation
-		_, _ = e.pool.Exec(ctx,
-			`UPDATE incidents SET status = 'resolved', resolved_at = NOW() WHERE id = $1`, incidentID)
-	}
+		`UPDATE incidents SET status='resolved', resolved_at=NOW() WHERE id=$1`, incidentID)
 }

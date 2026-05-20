@@ -1,12 +1,16 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/xpanel/marketplace/internal/crypto"
 	"github.com/xpanel/marketplace/internal/domain"
+	"github.com/xpanel/marketplace/internal/installer"
 )
 
 type MarketplaceHandler struct {
@@ -15,6 +19,23 @@ type MarketplaceHandler struct {
 
 func New(db *pgxpool.Pool) *MarketplaceHandler {
 	return &MarketplaceHandler{db: db}
+}
+
+func (h *MarketplaceHandler) installerFor(slug string) installer.Installer {
+	switch slug {
+	case "wordpress":
+		return &installer.WordPressInstaller{}
+	case "laravel":
+		return &installer.LaravelInstaller{}
+	case "nextcloud":
+		return &installer.DockerAppInstaller{ComposeTemplate: installer.NextcloudTemplate}
+	case "ghost":
+		return &installer.DockerAppInstaller{ComposeTemplate: installer.GhostTemplate}
+	case "gitlab":
+		return &installer.DockerAppInstaller{ComposeTemplate: installer.GitLabTemplate}
+	default:
+		return nil
+	}
 }
 
 func (h *MarketplaceHandler) ListApps(c *fiber.Ctx) error {
@@ -99,11 +120,15 @@ func (h *MarketplaceHandler) InstallApp(c *fiber.Ctx) error {
 	if installPath == "" {
 		installPath = "/var/www/" + req.AppSlug
 	}
+	if req.AdminPass == "" {
+		req.AdminPass = crypto.RandomPassword(20)
+	}
 
 	configJSON, _ := json.Marshal(map[string]string{
 		"admin_user":  req.AdminUser,
 		"admin_email": req.AdminEmail,
 		"site_name":   req.SiteName,
+		"admin_pass":  req.AdminPass,
 	})
 
 	var domainID *string
@@ -114,7 +139,7 @@ func (h *MarketplaceHandler) InstallApp(c *fiber.Ctx) error {
 	var id string
 	err = h.db.QueryRow(c.Context(),
 		`INSERT INTO app_installations (organization_id, app_id, domain_id, install_path, status, config)
-		 VALUES ($1,$2,$3,$4,'active',$5) RETURNING id`,
+		 VALUES ($1,$2,$3,$4,'installing',$5) RETURNING id`,
 		orgID, appID, domainID, installPath, configJSON,
 	).Scan(&id)
 	if err != nil {
@@ -123,7 +148,79 @@ func (h *MarketplaceHandler) InstallApp(c *fiber.Ctx) error {
 
 	_, _ = h.db.Exec(c.Context(), `UPDATE marketplace_apps SET install_count=install_count+1 WHERE id=$1`, appID)
 
-	return c.Status(201).JSON(fiber.Map{"id": id, "status": "active", "install_path": installPath})
+	// Run installer asynchronously
+	inst := h.installerFor(req.AppSlug)
+	if inst != nil {
+		go func() {
+			bgCtx, cancel := context.WithTimeout(context.Background(), 15*60*1e9) // 15 min
+			defer cancel()
+
+			cfg := installer.Config{
+				InstallPath: installPath,
+				Domain:      req.Domain,
+				AdminUser:   req.AdminUser,
+				AdminEmail:  req.AdminEmail,
+				AdminPass:   req.AdminPass,
+				SiteName:    req.SiteName,
+				DBName:      req.DBName,
+				DBUser:      req.DBUser,
+				DBPass:      req.DBPass,
+				DBHost:      req.DBHost,
+			}
+
+			result, err := inst.Install(bgCtx, cfg)
+			if err != nil {
+				log.Printf("install %s failed: %v", req.AppSlug, err)
+				_, _ = h.db.Exec(bgCtx,
+					`UPDATE app_installations SET status='failed', error_message=$1 WHERE id=$2`,
+					err.Error(), id)
+				return
+			}
+
+			notesJSON, _ := json.Marshal(result)
+			_, _ = h.db.Exec(bgCtx,
+				`UPDATE app_installations SET status='active', notes=$1, admin_url=$2 WHERE id=$3`,
+				string(notesJSON), result.AdminURL, id)
+			log.Printf("installed %s at %s → %s", req.AppSlug, installPath, result.AdminURL)
+		}()
+	} else {
+		// No real installer — mark active immediately (generic apps)
+		_, _ = h.db.Exec(c.Context(), `UPDATE app_installations SET status='active' WHERE id=$1`, id)
+	}
+
+	return c.Status(201).JSON(fiber.Map{
+		"id":           id,
+		"status":       "installing",
+		"install_path": installPath,
+		"message":      fmt.Sprintf("%s installation started. Check status for progress.", req.AppSlug),
+	})
+}
+
+func (h *MarketplaceHandler) GetInstallation(c *fiber.Ctx) error {
+	id := c.Params("id")
+	orgID := c.Get("X-Org-ID", "default")
+
+	var inst domain.Installation
+	var app domain.App
+	var adminURL, errMsg *string
+	err := h.db.QueryRow(c.Context(),
+		`SELECT i.id, i.install_path, i.status, i.admin_url, i.error_message, i.installed_at,
+		        a.slug, a.name, a.category, a.version
+		 FROM app_installations i JOIN marketplace_apps a ON a.id=i.app_id
+		 WHERE i.id=$1 AND i.organization_id=$2`, id, orgID).
+		Scan(&inst.ID, &inst.InstallPath, &inst.Status, &adminURL, &errMsg, &inst.InstalledAt,
+			&app.Slug, &app.Name, &app.Category, &app.Version)
+	if err != nil {
+		return c.Status(404).JSON(fiber.Map{"error": "installation not found"})
+	}
+	inst.App = &app
+	inst.OrganizationID = orgID
+	result := fiber.Map{
+		"installation": inst,
+		"admin_url":    adminURL,
+		"error":        errMsg,
+	}
+	return c.JSON(result)
 }
 
 func (h *MarketplaceHandler) ListInstallations(c *fiber.Ctx) error {
