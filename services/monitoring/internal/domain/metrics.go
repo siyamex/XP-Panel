@@ -31,9 +31,10 @@ type AlertRule struct {
 	Threshold       float64   `json:"threshold"`
 	DurationSeconds int       `json:"duration_seconds"`
 	Severity        string    `json:"severity"`
-	Channels        []string  `json:"channels"`
-	Enabled         bool      `json:"enabled"`
-	CreatedAt       time.Time `json:"created_at"`
+	Channels        []string           `json:"channels"`
+	Remediation     *RemediationConfig `json:"remediation,omitempty"`
+	Enabled         bool               `json:"enabled"`
+	CreatedAt       time.Time          `json:"created_at"`
 }
 
 type Incident struct {
@@ -50,6 +51,25 @@ type Incident struct {
 	StartedAt      time.Time  `json:"started_at"`
 	ResolvedAt     *time.Time `json:"resolved_at"`
 	AcknowledgedAt *time.Time `json:"acknowledged_at"`
+}
+
+// SystemMetrics is an alias used by the alerting engine — same shape as ServerMetrics.
+type SystemMetrics = ServerMetrics
+
+type RemediationConfig struct {
+	Action string `json:"action"` // restart_service | clear_cache | kill_process | send_notification
+	Target string `json:"target"` // service name or process pattern
+}
+
+type RemediationLog struct {
+	ID             string    `json:"id"`
+	IncidentID     string    `json:"incident_id"`
+	OrganizationID string    `json:"organization_id"`
+	Action         string    `json:"action"`
+	Target         string    `json:"target"`
+	Status         string    `json:"status"`
+	Output         string    `json:"output"`
+	CreatedAt      time.Time `json:"created_at"`
 }
 
 type CreateAlertRuleRequest struct {

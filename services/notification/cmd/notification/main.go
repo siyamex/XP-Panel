@@ -74,6 +74,7 @@ func main() {
 	api.Get("/unread-count", h.UnreadCount)
 	api.Get("/preferences", h.GetPreferences)
 	api.Put("/preferences", h.UpdatePreferences)
+	api.Post("/dispatch", h.Dispatch)
 
 	log.Printf("notification service listening on :%s", port)
 	if err := app.Listen(":" + port); err != nil {

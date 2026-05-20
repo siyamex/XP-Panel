@@ -145,6 +145,28 @@ func (h *MetricsHandler) AcknowledgeIncident(c *fiber.Ctx) error {
 	return c.JSON(i)
 }
 
+func (h *MetricsHandler) ListRemediationLogs(c *fiber.Ctx) error {
+	orgID := c.Get("X-Org-ID", "default")
+	rows, err := h.pool.Query(c.Context(),
+		`SELECT id, incident_id, organization_id, action, target, status, output, created_at
+		 FROM remediation_logs WHERE organization_id = $1 ORDER BY created_at DESC LIMIT 100`, orgID)
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
+	defer rows.Close()
+
+	logs := []domain.RemediationLog{}
+	for rows.Next() {
+		var l domain.RemediationLog
+		if err := rows.Scan(&l.ID, &l.IncidentID, &l.OrganizationID, &l.Action, &l.Target,
+			&l.Status, &l.Output, &l.CreatedAt); err != nil {
+			continue
+		}
+		logs = append(logs, l)
+	}
+	return c.JSON(fiber.Map{"logs": logs})
+}
+
 func (h *MetricsHandler) ResolveIncident(c *fiber.Ctx) error {
 	id := c.Params("id")
 	orgID := c.Get("X-Org-ID", "default")

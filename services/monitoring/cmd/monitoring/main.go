@@ -13,6 +13,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jackc/pgx/v5/stdlib"
 	"github.com/pressly/goose/v3"
+	"github.com/xpanel/monitoring/internal/alerting"
 	"github.com/xpanel/monitoring/internal/handler"
 )
 
@@ -32,6 +33,11 @@ func main() {
 	runMigrations(sqlDB)
 
 	mh := handler.NewMetricsHandler(pool)
+
+	// Start alerting engine in background
+	alertCtx, alertCancel := context.WithCancel(context.Background())
+	defer alertCancel()
+	go alerting.NewEngine(pool).Start(alertCtx)
 
 	app := fiber.New()
 	app.Use(logger.New(), cors.New())
@@ -54,6 +60,7 @@ func main() {
 	mon.Get("/incidents", mh.ListIncidents)
 	mon.Put("/incidents/:id/acknowledge", mh.AcknowledgeIncident)
 	mon.Put("/incidents/:id/resolve", mh.ResolveIncident)
+	mon.Get("/remediation/logs", mh.ListRemediationLogs)
 
 	app.Get("/health", func(c *fiber.Ctx) error {
 		return c.JSON(fiber.Map{"status": "ok", "service": "monitoring"})

@@ -1,20 +1,31 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/xpanel/notification/internal/domain"
+	"github.com/xpanel/notification/internal/provider"
 )
 
 type NotificationHandler struct {
-	db *pgxpool.Pool
+	db       *pgxpool.Pool
+	email    *provider.EmailProvider
+	slack    *provider.SlackProvider
+	telegram *provider.TelegramProvider
 }
 
 func New(db *pgxpool.Pool) *NotificationHandler {
-	return &NotificationHandler{db: db}
+	return &NotificationHandler{
+		db:       db,
+		email:    provider.NewEmailProvider(),
+		slack:    provider.NewSlackProvider(),
+		telegram: provider.NewTelegramProvider(),
+	}
 }
 
 func (h *NotificationHandler) List(c *fiber.Ctx) error {
@@ -158,6 +169,64 @@ func (h *NotificationHandler) UpdatePreferences(c *fiber.Ctx) error {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
 	return c.JSON(fiber.Map{"updated": true})
+}
+
+// Dispatch is called by other services (monitoring, security) to create a notification
+// and immediately push it through configured channels.
+func (h *NotificationHandler) Dispatch(c *fiber.Ctx) error {
+	var req struct {
+		OrganizationID string  `json:"organization_id"`
+		UserID         *string `json:"user_id"`
+		Type           string  `json:"type"`
+		Title          string  `json:"title"`
+		Message        string  `json:"message"`
+		Link           *string `json:"link"`
+	}
+	if err := c.BodyParser(&req); err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "invalid request"})
+	}
+	if req.OrganizationID == "" {
+		req.OrganizationID = c.Get("X-Org-ID", "default")
+	}
+	if req.Type == "" {
+		req.Type = "info"
+	}
+
+	var id string
+	err := h.db.QueryRow(c.Context(),
+		`INSERT INTO notifications (organization_id, user_id, type, title, message, link)
+		 VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
+		req.OrganizationID, req.UserID, req.Type, req.Title, req.Message, req.Link,
+	).Scan(&id)
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
+
+	// Dispatch to external channels based on org preferences
+	go h.dispatchExternal(req.OrganizationID, req.Title, req.Message)
+
+	return c.Status(201).JSON(fiber.Map{"id": id, "dispatched": true})
+}
+
+func (h *NotificationHandler) dispatchExternal(orgID, title, message string) {
+	ctx := context.Background()
+	var prefs domain.NotificationPreferences
+	err := h.db.QueryRow(ctx,
+		`SELECT email_enabled, slack_enabled, COALESCE(slack_webhook,''), COALESCE(telegram_chat_id,'')
+		 FROM notification_preferences WHERE organization_id = $1 LIMIT 1`, orgID,
+	).Scan(&prefs.EmailEnabled, &prefs.SlackEnabled, &prefs.SlackWebhook, &prefs.TelegramChatID)
+	if err != nil {
+		return
+	}
+
+	text := fmt.Sprintf("[XP-Panel] %s\n%s", title, message)
+
+	if prefs.SlackEnabled && prefs.SlackWebhook != "" {
+		_ = h.slack.Send(prefs.SlackWebhook, text)
+	}
+	if prefs.TelegramChatID != "" {
+		_ = h.telegram.Send(prefs.TelegramChatID, text)
+	}
 }
 
 func nullStr(s string) interface{} {
