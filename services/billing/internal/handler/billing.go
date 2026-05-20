@@ -43,7 +43,7 @@ func (h *BillingHandler) ListPlans(c *fiber.Ctx) error {
 }
 
 func (h *BillingHandler) GetSubscription(c *fiber.Ctx) error {
-	orgID := c.Get("X-Organization-ID", "default")
+	orgID := c.Get("X-Org-ID", "default")
 	var sub domain.Subscription
 	var plan domain.Plan
 	var featJSON, limJSON []byte
@@ -75,7 +75,7 @@ func (h *BillingHandler) CreateSubscription(c *fiber.Ctx) error {
 	if req.BillingCycle == "" {
 		req.BillingCycle = "monthly"
 	}
-	orgID := c.Get("X-Organization-ID", "default")
+	orgID := c.Get("X-Org-ID", "default")
 
 	var planID string
 	err := h.db.QueryRow(c.Context(), `SELECT id FROM billing_plans WHERE slug=$1`, req.PlanSlug).Scan(&planID)
@@ -106,7 +106,7 @@ func (h *BillingHandler) CreateSubscription(c *fiber.Ctx) error {
 func (h *BillingHandler) CancelSubscription(c *fiber.Ctx) error {
 	var req domain.CancelSubscriptionRequest
 	_ = c.BodyParser(&req)
-	orgID := c.Get("X-Organization-ID", "default")
+	orgID := c.Get("X-Org-ID", "default")
 
 	if req.AtPeriodEnd {
 		_, err := h.db.Exec(c.Context(),
@@ -126,7 +126,7 @@ func (h *BillingHandler) CancelSubscription(c *fiber.Ctx) error {
 }
 
 func (h *BillingHandler) ListInvoices(c *fiber.Ctx) error {
-	orgID := c.Get("X-Organization-ID", "default")
+	orgID := c.Get("X-Org-ID", "default")
 	rows, err := h.db.Query(c.Context(),
 		`SELECT id, number, status, amount_due, amount_paid, currency, period_start, period_end, due_date, paid_at, pdf_url, created_at
 		 FROM invoices WHERE organization_id=$1 ORDER BY created_at DESC LIMIT 50`, orgID)
@@ -150,7 +150,7 @@ func (h *BillingHandler) ListInvoices(c *fiber.Ctx) error {
 
 // GetUsage returns current period usage stats
 func (h *BillingHandler) GetUsage(c *fiber.Ctx) error {
-	orgID := c.Get("X-Organization-ID", "default")
+	orgID := c.Get("X-Org-ID", "default")
 	_ = orgID
 
 	// Return simulated usage data

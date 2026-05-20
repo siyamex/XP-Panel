@@ -26,7 +26,7 @@ func New(db *pgxpool.Pool) *DockerHandler {
 
 // ListContainers returns all containers for the organization (mocked + DB merged)
 func (h *DockerHandler) ListContainers(c *fiber.Ctx) error {
-	orgID := c.Get("X-Organization-ID", "default")
+	orgID := c.Get("X-Org-ID", "default")
 	rows, err := h.db.Query(c.Context(),
 		`SELECT id, container_id, name, image, status, ports, created_at FROM docker_containers WHERE organization_id=$1 ORDER BY created_at DESC`, orgID)
 	if err != nil {
@@ -58,7 +58,7 @@ func (h *DockerHandler) CreateContainer(c *fiber.Ctx) error {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid request"})
 	}
 
-	orgID := c.Get("X-Organization-ID", "default")
+	orgID := c.Get("X-Org-ID", "default")
 	containerID := fmt.Sprintf("%x", uuid.New())[:12]
 
 	portsJSON, _ := json.Marshal(req.Ports)
@@ -198,7 +198,7 @@ func (h *DockerHandler) RemoveImage(c *fiber.Ctx) error {
 
 // ListComposeProjects returns compose projects for org
 func (h *DockerHandler) ListComposeProjects(c *fiber.Ctx) error {
-	orgID := c.Get("X-Organization-ID", "default")
+	orgID := c.Get("X-Org-ID", "default")
 	rows, err := h.db.Query(c.Context(),
 		`SELECT id, name, compose_file, status, created_at FROM docker_compose_projects WHERE organization_id=$1 ORDER BY created_at DESC`, orgID)
 	if err != nil {
@@ -224,7 +224,7 @@ func (h *DockerHandler) CreateComposeProject(c *fiber.Ctx) error {
 	if err := c.BodyParser(&req); err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid request"})
 	}
-	orgID := c.Get("X-Organization-ID", "default")
+	orgID := c.Get("X-Org-ID", "default")
 
 	var id string
 	err := h.db.QueryRow(c.Context(),

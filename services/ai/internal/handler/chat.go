@@ -37,7 +37,7 @@ func New(db *pgxpool.Pool) *ChatHandler {
 }
 
 func (h *ChatHandler) ListConversations(c *fiber.Ctx) error {
-	orgID := c.Get("X-Organization-ID", "default")
+	orgID := c.Get("X-Org-ID", "default")
 	rows, err := h.db.Query(c.Context(),
 		`SELECT id, title, model, created_at, updated_at FROM ai_conversations WHERE organization_id=$1 ORDER BY updated_at DESC LIMIT 50`, orgID)
 	if err != nil {
@@ -106,7 +106,7 @@ func (h *ChatHandler) Chat(c *fiber.Ctx) error {
 		return c.Status(400).JSON(fiber.Map{"error": "message required"})
 	}
 
-	orgID := c.Get("X-Organization-ID", "default")
+	orgID := c.Get("X-Org-ID", "default")
 	model := req.Model
 	if model == "" {
 		model = "claude-sonnet-4-6"

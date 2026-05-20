@@ -19,7 +19,7 @@ func New(db *pgxpool.Pool) *PipelineHandler {
 }
 
 func (h *PipelineHandler) ListPipelines(c *fiber.Ctx) error {
-	orgID := c.Get("X-Organization-ID", "default")
+	orgID := c.Get("X-Org-ID", "default")
 	rows, err := h.db.Query(c.Context(),
 		`SELECT id, name, description, repo_url, branch, trigger, steps, status, last_run_at, created_at
 		 FROM pipelines WHERE organization_id=$1 ORDER BY created_at DESC`, orgID)
@@ -70,7 +70,7 @@ func (h *PipelineHandler) CreatePipeline(c *fiber.Ctx) error {
 	if req.Trigger == "" {
 		req.Trigger = "manual"
 	}
-	orgID := c.Get("X-Organization-ID", "default")
+	orgID := c.Get("X-Org-ID", "default")
 	stepsJSON, _ := json.Marshal(req.Steps)
 
 	var id string
@@ -198,7 +198,7 @@ func (h *PipelineHandler) ListRuns(c *fiber.Ctx) error {
 }
 
 func (h *PipelineHandler) ListDeployments(c *fiber.Ctx) error {
-	orgID := c.Get("X-Organization-ID", "default")
+	orgID := c.Get("X-Org-ID", "default")
 	rows, err := h.db.Query(c.Context(),
 		`SELECT id, pipeline_id, environment, status, version, deployed_by, deployed_at, finished_at
 		 FROM deployments WHERE organization_id=$1 ORDER BY deployed_at DESC LIMIT 50`, orgID)

@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"fmt"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -21,29 +22,27 @@ func (h *MarketplaceHandler) ListApps(c *fiber.Ctx) error {
 	search := c.Query("q")
 	featured := c.QueryBool("featured")
 
-	query := `SELECT id, slug, name, description, category, icon_url, version, author, install_count, rating, tags, is_featured FROM marketplace_apps WHERE is_active=TRUE`
+	query := `SELECT id, slug, name, description, category, icon_url, version, author, install_count, rating, tags, is_featured
+	          FROM marketplace_apps WHERE is_active=TRUE`
 	args := []any{}
-	i := 1
+	n := 1
 
 	if category != "" {
-		query += ` AND category=$` + fiber.Map{"i": i}["i"].(string)
+		query += fmt.Sprintf(` AND category=$%d`, n)
 		args = append(args, category)
-		i++
+		n++
 	}
 	if search != "" {
-		query += ` AND (name ILIKE $` + fiber.Map{"i": i}["i"].(string) + ` OR description ILIKE $` + fiber.Map{"i": i}["i"].(string) + `)`
+		query += fmt.Sprintf(` AND (name ILIKE $%d OR description ILIKE $%d)`, n, n)
 		args = append(args, "%"+search+"%")
-		i++
+		n++
 	}
 	if featured {
 		query += ` AND is_featured=TRUE`
 	}
 	query += ` ORDER BY is_featured DESC, install_count DESC`
 
-	// Simple query without dynamic args for now
-	rows, err := h.db.Query(c.Context(),
-		`SELECT id, slug, name, description, category, icon_url, version, author, install_count, rating, tags, is_featured
-		 FROM marketplace_apps WHERE is_active=TRUE ORDER BY is_featured DESC, install_count DESC`)
+	rows, err := h.db.Query(c.Context(), query, args...)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
@@ -60,12 +59,7 @@ func (h *MarketplaceHandler) ListApps(c *fiber.Ctx) error {
 		_ = json.Unmarshal(tagsJSON, &app.Tags)
 		apps = append(apps, app)
 	}
-
-	_ = query
-	_ = args
-	_ = i
-
-	return c.JSON(fiber.Map{"apps": apps})
+	return c.JSON(fiber.Map{"apps": apps, "total": len(apps)})
 }
 
 func (h *MarketplaceHandler) GetApp(c *fiber.Ctx) error {
@@ -90,10 +84,13 @@ func (h *MarketplaceHandler) InstallApp(c *fiber.Ctx) error {
 	if err := c.BodyParser(&req); err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid request"})
 	}
-	orgID := c.Get("X-Organization-ID", "default")
+	if req.AppSlug == "" {
+		return c.Status(400).JSON(fiber.Map{"error": "app_slug is required"})
+	}
+	orgID := c.Get("X-Org-ID", "default")
 
 	var appID string
-	err := h.db.QueryRow(c.Context(), `SELECT id FROM marketplace_apps WHERE slug=$1`, req.AppSlug).Scan(&appID)
+	err := h.db.QueryRow(c.Context(), `SELECT id FROM marketplace_apps WHERE slug=$1 AND is_active=TRUE`, req.AppSlug).Scan(&appID)
 	if err != nil {
 		return c.Status(404).JSON(fiber.Map{"error": "app not found"})
 	}
@@ -109,12 +106,12 @@ func (h *MarketplaceHandler) InstallApp(c *fiber.Ctx) error {
 		"site_name":   req.SiteName,
 	})
 
-	var id string
 	var domainID *string
 	if req.DomainID != "" {
 		domainID = &req.DomainID
 	}
 
+	var id string
 	err = h.db.QueryRow(c.Context(),
 		`INSERT INTO app_installations (organization_id, app_id, domain_id, install_path, status, config)
 		 VALUES ($1,$2,$3,$4,'active',$5) RETURNING id`,
@@ -124,19 +121,18 @@ func (h *MarketplaceHandler) InstallApp(c *fiber.Ctx) error {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
 
-	// Bump install count
 	_, _ = h.db.Exec(c.Context(), `UPDATE marketplace_apps SET install_count=install_count+1 WHERE id=$1`, appID)
 
 	return c.Status(201).JSON(fiber.Map{"id": id, "status": "active", "install_path": installPath})
 }
 
 func (h *MarketplaceHandler) ListInstallations(c *fiber.Ctx) error {
-	orgID := c.Get("X-Organization-ID", "default")
+	orgID := c.Get("X-Org-ID", "default")
 	rows, err := h.db.Query(c.Context(),
 		`SELECT i.id, i.app_id, i.install_path, i.status, i.installed_at,
 		        a.slug, a.name, a.category, a.version
 		 FROM app_installations i JOIN marketplace_apps a ON a.id=i.app_id
-		 WHERE i.organization_id=$1 ORDER BY i.installed_at DESC`, orgID)
+		 WHERE i.organization_id=$1 AND i.status != 'removed' ORDER BY i.installed_at DESC`, orgID)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
@@ -154,15 +150,16 @@ func (h *MarketplaceHandler) ListInstallations(c *fiber.Ctx) error {
 		inst.OrganizationID = orgID
 		installs = append(installs, inst)
 	}
-	return c.JSON(fiber.Map{"installations": installs})
+	return c.JSON(fiber.Map{"installations": installs, "total": len(installs)})
 }
 
 func (h *MarketplaceHandler) UninstallApp(c *fiber.Ctx) error {
 	id := c.Params("id")
-	_, err := h.db.Exec(c.Context(),
-		`UPDATE app_installations SET status='removed', updated_at=NOW() WHERE id=$1`, id)
-	if err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	orgID := c.Get("X-Org-ID", "default")
+	ct, err := h.db.Exec(c.Context(),
+		`UPDATE app_installations SET status='removed', updated_at=NOW() WHERE id=$1 AND organization_id=$2`, id, orgID)
+	if err != nil || ct.RowsAffected() == 0 {
+		return c.Status(404).JSON(fiber.Map{"error": "installation not found"})
 	}
 	return c.SendStatus(204)
 }
