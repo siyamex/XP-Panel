@@ -1,0 +1,57 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dns
+  namespace: xp-panel
+  labels:
+    app: dns
+    app.kubernetes.io/component: dns
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: dns
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: dns
+    spec:
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: dns
+          image: ghcr.io/xp-panel/xp-panel/dns:latest
+          ports:
+            - containerPort: 8082
+              name: http
+          env:
+            - name: PORT
+              value: "8082"
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: xp-panel-secrets
+                  key: database-url
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8082
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8082
+            initialDelaySeconds: 5
+            periodSeconds: 10

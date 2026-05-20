@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: dbmanager
+  namespace: xp-panel
+  labels:
+    app: dbmanager
+    app.kubernetes.io/component: dbmanager
+spec:
+  selector:
+    app: dbmanager
+  ports:
+    - name: http
+      port: 8086
+      targetPort: 8086
+      protocol: TCP
+  type: ClusterIP

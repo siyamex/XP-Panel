@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: security
+  namespace: xp-panel
+  labels:
+    app: security
+    app.kubernetes.io/component: security
+spec:
+  selector:
+    app: security
+  ports:
+    - name: http
+      port: 8091
+      targetPort: 8091
+      protocol: TCP
+  type: ClusterIP

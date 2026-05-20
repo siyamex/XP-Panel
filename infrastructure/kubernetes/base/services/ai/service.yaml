@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: ai
+  namespace: xp-panel
+  labels:
+    app: ai
+    app.kubernetes.io/component: ai
+spec:
+  selector:
+    app: ai
+  ports:
+    - name: http
+      port: 8090
+      targetPort: 8090
+      protocol: TCP
+  type: ClusterIP

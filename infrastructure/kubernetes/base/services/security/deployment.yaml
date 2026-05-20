@@ -1,0 +1,57 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: security
+  namespace: xp-panel
+  labels:
+    app: security
+    app.kubernetes.io/component: security
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: security
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: security
+    spec:
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: security
+          image: ghcr.io/xp-panel/xp-panel/security:latest
+          ports:
+            - containerPort: 8091
+              name: http
+          env:
+            - name: PORT
+              value: "8091"
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: xp-panel-secrets
+                  key: database-url
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8091
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8091
+            initialDelaySeconds: 5
+            periodSeconds: 10

@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: devops
+  namespace: xp-panel
+  labels:
+    app: devops
+    app.kubernetes.io/component: devops
+spec:
+  selector:
+    app: devops
+  ports:
+    - name: http
+      port: 8093
+      targetPort: 8093
+      protocol: TCP
+  type: ClusterIP

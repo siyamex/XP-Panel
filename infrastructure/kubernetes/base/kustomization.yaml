@@ -18,6 +18,45 @@ resources:
   - services/auth/service.yaml
   - services/web/deployment.yaml
   - services/web/service.yaml
+  - services/dns/deployment.yaml
+  - services/dns/service.yaml
+  - services/dns/hpa.yaml
+  - services/mail/deployment.yaml
+  - services/mail/service.yaml
+  - services/mail/hpa.yaml
+  - services/webserver/deployment.yaml
+  - services/webserver/service.yaml
+  - services/webserver/hpa.yaml
+  - services/filemanager/deployment.yaml
+  - services/filemanager/service.yaml
+  - services/filemanager/hpa.yaml
+  - services/dbmanager/deployment.yaml
+  - services/dbmanager/service.yaml
+  - services/dbmanager/hpa.yaml
+  - services/backup/deployment.yaml
+  - services/backup/service.yaml
+  - services/backup/hpa.yaml
+  - services/monitoring/deployment.yaml
+  - services/monitoring/service.yaml
+  - services/monitoring/hpa.yaml
+  - services/billing/deployment.yaml
+  - services/billing/service.yaml
+  - services/billing/hpa.yaml
+  - services/ai/deployment.yaml
+  - services/ai/service.yaml
+  - services/ai/hpa.yaml
+  - services/security/deployment.yaml
+  - services/security/service.yaml
+  - services/security/hpa.yaml
+  - services/marketplace/deployment.yaml
+  - services/marketplace/service.yaml
+  - services/marketplace/hpa.yaml
+  - services/devops/deployment.yaml
+  - services/devops/service.yaml
+  - services/devops/hpa.yaml
+  - services/notification/deployment.yaml
+  - services/notification/service.yaml
+  - services/notification/hpa.yaml
 
 commonLabels:
   app.kubernetes.io/name: xp-panel

@@ -1,0 +1,57 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: marketplace
+  namespace: xp-panel
+  labels:
+    app: marketplace
+    app.kubernetes.io/component: marketplace
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: marketplace
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: marketplace
+    spec:
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: marketplace
+          image: ghcr.io/xp-panel/xp-panel/marketplace:latest
+          ports:
+            - containerPort: 8092
+              name: http
+          env:
+            - name: PORT
+              value: "8092"
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: xp-panel-secrets
+                  key: database-url
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8092
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8092
+            initialDelaySeconds: 5
+            periodSeconds: 10

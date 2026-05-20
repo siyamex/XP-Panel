@@ -1,0 +1,157 @@
+---
+# harden-security.yml — Security hardening for XP-Panel servers
+# Usage: ansible-playbook -i inventory/hosts.yml playbooks/harden-security.yml
+
+- name: Harden server security
+  hosts: web_servers
+  become: true
+  gather_facts: true
+
+  tasks:
+    # ── Kernel sysctl hardening ───────────────────────────────
+    - name: Apply security-focused sysctl parameters
+      ansible.posix.sysctl:
+        name: "{{ item.key }}"
+        value: "{{ item.value }}"
+        sysctl_set: true
+        state: present
+        reload: true
+      loop:
+        - { key: net.ipv4.tcp_syncookies,          value: "1" }
+        - { key: net.ipv4.conf.all.rp_filter,       value: "1" }
+        - { key: net.ipv4.conf.default.rp_filter,   value: "1" }
+        - { key: net.ipv4.conf.all.accept_redirects, value: "0" }
+        - { key: net.ipv4.conf.all.send_redirects,  value: "0" }
+        - { key: net.ipv4.icmp_echo_ignore_broadcasts, value: "1" }
+        - { key: kernel.dmesg_restrict,             value: "1" }
+        - { key: kernel.kptr_restrict,              value: "2" }
+        - { key: fs.protected_hardlinks,            value: "1" }
+        - { key: fs.protected_symlinks,             value: "1" }
+
+    # ── fail2ban jail.local ───────────────────────────────────
+    - name: Deploy fail2ban jail.local with SSH protection
+      ansible.builtin.copy:
+        dest: /etc/fail2ban/jail.local
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          [DEFAULT]
+          # Ban hosts for 1 hour after 3 failures
+          bantime   = 3600
+          findtime  = 600
+          maxretry  = 3
+          backend   = auto
+          usedns    = warn
+          logencoding = utf-8
+          enabled   = false
+
+          # Send ban notifications (configure sender/dest as needed)
+          # destemail = admin@yourdomain.com
+          # sendername = Fail2Ban
+          # mta = sendmail
+
+          [sshd]
+          enabled  = true
+          port     = ssh
+          filter   = sshd
+          logpath  = %(sshd_log)s
+          backend  = %(sshd_backend)s
+          maxretry = 3
+          bantime  = 3600
+      notify: Restart fail2ban
+
+    # ── Disable unused filesystems ────────────────────────────
+    - name: Blacklist unused and potentially dangerous filesystems
+      ansible.builtin.copy:
+        dest: /etc/modprobe.d/disable-filesystems.conf
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          # Disable uncommon/unneeded filesystems per CIS benchmark
+          install cramfs   /bin/true
+          install freevxfs /bin/true
+          install jffs2    /bin/true
+          install hfs      /bin/true
+          install hfsplus  /bin/true
+          install squashfs /bin/true
+          install udf      /bin/true
+
+    # ── File permissions ──────────────────────────────────────
+    - name: Secure /etc/passwd permissions
+      ansible.builtin.file:
+        path: /etc/passwd
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Secure /etc/shadow permissions
+      ansible.builtin.file:
+        path: /etc/shadow
+        owner: root
+        group: shadow
+        mode: "0640"
+
+    - name: Secure /etc/group permissions
+      ansible.builtin.file:
+        path: /etc/group
+        owner: root
+        group: root
+        mode: "0644"
+
+    # ── Auditd rules for authentication events ────────────────
+    - name: Install auditd
+      ansible.builtin.package:
+        name: auditd
+        state: present
+
+    - name: Deploy audit rules for authentication and privilege events
+      ansible.builtin.copy:
+        dest: /etc/audit/rules.d/xp-panel-hardening.rules
+        owner: root
+        group: root
+        mode: "0640"
+        content: |
+          ## XP-Panel security audit rules
+          ## Authentication events
+          -w /etc/passwd          -p wa -k identity
+          -w /etc/shadow          -p wa -k identity
+          -w /etc/group           -p wa -k identity
+          -w /etc/gshadow         -p wa -k identity
+          -w /etc/sudoers         -p wa -k sudoers
+          -w /etc/sudoers.d/      -p wa -k sudoers
+
+          ## Login events
+          -w /var/log/lastlog     -p wa -k logins
+          -w /var/run/faillock/   -p wa -k logins
+          -w /var/log/wtmp        -p wa -k logins
+          -w /var/log/btmp        -p wa -k logins
+
+          ## sudo usage
+          -a always,exit -F arch=b64 -S execve -F path=/usr/bin/sudo -k sudo_usage
+          -a always,exit -F arch=b32 -S execve -F path=/usr/bin/sudo -k sudo_usage
+
+          ## SSH configuration changes
+          -w /etc/ssh/sshd_config -p wa -k sshd_config
+
+          ## Privileged command execution
+          -a always,exit -F arch=b64 -S execve -F euid=0 -F auid>=1000 -F auid!=-1 -k privileged
+      notify: Restart auditd
+
+    - name: Ensure auditd is started and enabled
+      ansible.builtin.service:
+        name: auditd
+        state: started
+        enabled: true
+
+  handlers:
+    - name: Restart fail2ban
+      ansible.builtin.service:
+        name: fail2ban
+        state: restarted
+
+    - name: Restart auditd
+      ansible.builtin.service:
+        name: auditd
+        state: restarted

@@ -1,0 +1,163 @@
+---
+# setup-server.yml — Full server bootstrap for XP-Panel
+# Usage: ansible-playbook -i inventory/hosts.yml playbooks/setup-server.yml
+
+- name: Bootstrap server
+  hosts: web_servers
+  become: true
+  gather_facts: true
+
+  vars:
+    docker_install_script: https://get.docker.com
+
+  tasks:
+    # ── Packages ──────────────────────────────────────────────
+    - name: Update apt cache
+      ansible.builtin.apt:
+        update_cache: true
+        cache_valid_time: 3600
+      when: ansible_os_family == "Debian"
+
+    - name: Install base packages
+      ansible.builtin.package:
+        name:
+          - curl
+          - wget
+          - git
+          - unzip
+          - ufw
+          - fail2ban
+          - htop
+          - vim
+          - tmux
+          - chrony
+          - ca-certificates
+          - gnupg
+          - lsb-release
+        state: present
+
+    # ── Timezone ──────────────────────────────────────────────
+    - name: Set timezone to UTC
+      community.general.timezone:
+        name: UTC
+
+    - name: Ensure chrony is started and enabled
+      ansible.builtin.service:
+        name: chrony
+        state: started
+        enabled: true
+
+    # ── Sysctl ────────────────────────────────────────────────
+    - name: Apply sysctl parameters
+      ansible.posix.sysctl:
+        name: "{{ item.key }}"
+        value: "{{ item.value }}"
+        sysctl_set: true
+        state: present
+        reload: true
+      loop:
+        - { key: net.ipv4.ip_forward,  value: "1" }
+        - { key: vm.swappiness,         value: "10" }
+        - { key: fs.file-max,           value: "1000000" }
+
+    # ── UFW firewall ──────────────────────────────────────────
+    - name: Set UFW default incoming policy to deny
+      community.general.ufw:
+        direction: incoming
+        policy: deny
+
+    - name: Set UFW default outgoing policy to allow
+      community.general.ufw:
+        direction: outgoing
+        policy: allow
+
+    - name: Allow SSH (22/tcp)
+      community.general.ufw:
+        rule: allow
+        port: "22"
+        proto: tcp
+
+    - name: Allow HTTP (80/tcp)
+      community.general.ufw:
+        rule: allow
+        port: "80"
+        proto: tcp
+
+    - name: Allow HTTPS (443/tcp)
+      community.general.ufw:
+        rule: allow
+        port: "443"
+        proto: tcp
+
+    - name: Enable UFW
+      community.general.ufw:
+        state: enabled
+
+    # ── fail2ban ──────────────────────────────────────────────
+    - name: Ensure fail2ban is started and enabled
+      ansible.builtin.service:
+        name: fail2ban
+        state: started
+        enabled: true
+
+    # ── SSH hardening ─────────────────────────────────────────
+    - name: Disable root password authentication in sshd_config
+      ansible.builtin.lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: '^#?PermitRootLogin'
+        line: 'PermitRootLogin prohibit-password'
+        state: present
+        backup: true
+      notify: Restart sshd
+
+    - name: Disable password authentication in sshd_config
+      ansible.builtin.lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: '^#?PasswordAuthentication'
+        line: 'PasswordAuthentication no'
+        state: present
+      notify: Restart sshd
+
+    # ── Docker ────────────────────────────────────────────────
+    - name: Check if Docker is already installed
+      ansible.builtin.command: docker --version
+      register: docker_check
+      failed_when: false
+      changed_when: false
+
+    - name: Download Docker install script
+      ansible.builtin.get_url:
+        url: "{{ docker_install_script }}"
+        dest: /tmp/get-docker.sh
+        mode: "0755"
+      when: docker_check.rc != 0
+
+    - name: Install Docker via get.docker.com script
+      ansible.builtin.command: sh /tmp/get-docker.sh
+      when: docker_check.rc != 0
+      changed_when: true
+
+    - name: Ensure Docker service is started and enabled
+      ansible.builtin.service:
+        name: docker
+        state: started
+        enabled: true
+
+    - name: Install docker-compose-plugin (Debian/Ubuntu)
+      ansible.builtin.apt:
+        name: docker-compose-plugin
+        state: present
+        update_cache: true
+      when: ansible_os_family == "Debian"
+
+    - name: Install docker-compose-plugin (RHEL/CentOS)
+      ansible.builtin.dnf:
+        name: docker-compose-plugin
+        state: present
+      when: ansible_os_family == "RedHat"
+
+  handlers:
+    - name: Restart sshd
+      ansible.builtin.service:
+        name: sshd
+        state: restarted

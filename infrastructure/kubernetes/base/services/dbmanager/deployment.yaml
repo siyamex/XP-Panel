@@ -1,0 +1,57 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dbmanager
+  namespace: xp-panel
+  labels:
+    app: dbmanager
+    app.kubernetes.io/component: dbmanager
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: dbmanager
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: dbmanager
+    spec:
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: dbmanager
+          image: ghcr.io/xp-panel/xp-panel/dbmanager:latest
+          ports:
+            - containerPort: 8086
+              name: http
+          env:
+            - name: PORT
+              value: "8086"
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: xp-panel-secrets
+                  key: database-url
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8086
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8086
+            initialDelaySeconds: 5
+            periodSeconds: 10

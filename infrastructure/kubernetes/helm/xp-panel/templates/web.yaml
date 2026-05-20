@@ -1,0 +1,134 @@
+{{/*
+  web.yaml
+  Deployment, Service, and HPA for the Next.js frontend (port 3000).
+  Controlled by .Values.web.
+*/}}
+{{- if .Values.web.enabled }}
+---
+# ──────────────────────────────────────────────────────────────
+# Deployment: web (Next.js frontend)
+# ──────────────────────────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "xp-panel.name" . }}-web
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "xp-panel.labels" . | nindent 4 }}
+    app.kubernetes.io/component: web
+spec:
+  replicas: {{ .Values.web.replicas | default 2 }}
+  selector:
+    matchLabels:
+      {{- include "xp-panel.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: web
+  template:
+    metadata:
+      labels:
+        {{- include "xp-panel.labels" . | nindent 8 }}
+        app.kubernetes.io/component: web
+    spec:
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      containers:
+        - name: web
+          image: "{{ .Values.global.imageRegistry }}/{{ .Values.image.repository }}/web:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          ports:
+            - name: http
+              containerPort: 3000
+              protocol: TCP
+          env:
+            - name: NODE_ENV
+              value: production
+            - name: NEXT_PUBLIC_API_URL
+              value: "https://{{ .Values.ingress.hosts.api }}"
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 30
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            failureThreshold: 3
+          resources:
+            {{- toYaml .Values.web.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false   # Next.js writes .next cache at runtime
+            capabilities:
+              drop:
+                - ALL
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app.kubernetes.io/component: web
+                topologyKey: kubernetes.io/hostname
+---
+# ──────────────────────────────────────────────────────────────
+# Service: web
+# ──────────────────────────────────────────────────────────────
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "xp-panel.name" . }}-web
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "xp-panel.labels" . | nindent 4 }}
+    app.kubernetes.io/component: web
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 3000
+      targetPort: http
+      protocol: TCP
+  selector:
+    {{- include "xp-panel.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: web
+---
+# ──────────────────────────────────────────────────────────────
+# HorizontalPodAutoscaler: web
+# ──────────────────────────────────────────────────────────────
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ include "xp-panel.name" . }}-web
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "xp-panel.labels" . | nindent 4 }}
+    app.kubernetes.io/component: web
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ include "xp-panel.name" . }}-web
+  minReplicas: {{ .Values.web.replicas | default 2 }}
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80
+{{- end }}

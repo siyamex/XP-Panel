@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: webserver
+  namespace: xp-panel
+  labels:
+    app: webserver
+    app.kubernetes.io/component: webserver
+spec:
+  selector:
+    app: webserver
+  ports:
+    - name: http
+      port: 8084
+      targetPort: 8084
+      protocol: TCP
+  type: ClusterIP

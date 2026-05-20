@@ -1,0 +1,62 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: billing
+  namespace: xp-panel
+  labels:
+    app: billing
+    app.kubernetes.io/component: billing
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: billing
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: billing
+    spec:
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: billing
+          image: ghcr.io/xp-panel/xp-panel/billing:latest
+          ports:
+            - containerPort: 8089
+              name: http
+          env:
+            - name: PORT
+              value: "8089"
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: xp-panel-secrets
+                  key: database-url
+            - name: STRIPE_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: xp-panel-secrets
+                  key: stripe-secret-key
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8089
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8089
+            initialDelaySeconds: 5
+            periodSeconds: 10

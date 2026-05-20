@@ -1,0 +1,62 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: notification
+  namespace: xp-panel
+  labels:
+    app: notification
+    app.kubernetes.io/component: notification
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: notification
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: notification
+    spec:
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: notification
+          image: ghcr.io/xp-panel/xp-panel/notification:latest
+          ports:
+            - containerPort: 8094
+              name: http
+          env:
+            - name: PORT
+              value: "8094"
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: xp-panel-secrets
+                  key: database-url
+            - name: REDIS_URL
+              valueFrom:
+                secretKeyRef:
+                  name: xp-panel-secrets
+                  key: redis-url
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8094
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8094
+            initialDelaySeconds: 5
+            periodSeconds: 10

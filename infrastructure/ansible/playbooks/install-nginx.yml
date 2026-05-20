@@ -1,0 +1,111 @@
+---
+# install-nginx.yml — Install and configure NGINX for XP-Panel
+# Usage: ansible-playbook -i inventory/hosts.yml playbooks/install-nginx.yml
+
+- name: Install and configure NGINX
+  hosts: web_servers
+  become: true
+  gather_facts: true
+
+  tasks:
+    - name: Install nginx
+      ansible.builtin.package:
+        name: nginx
+        state: present
+
+    - name: Deploy main nginx.conf
+      ansible.builtin.copy:
+        dest: /etc/nginx/nginx.conf
+        owner: root
+        group: root
+        mode: "0644"
+        backup: true
+        content: |
+          user www-data;
+          worker_processes auto;
+          pid /run/nginx.pid;
+          include /etc/nginx/modules-enabled/*.conf;
+
+          events {
+              worker_connections 1024;
+              multi_accept on;
+              use epoll;
+          }
+
+          http {
+              ##
+              # Basic settings
+              ##
+              sendfile            on;
+              tcp_nopush          on;
+              tcp_nodelay         on;
+              keepalive_timeout   65;
+              types_hash_max_size 2048;
+              server_tokens       off;
+              client_max_body_size 100m;
+
+              include /etc/nginx/mime.types;
+              default_type application/octet-stream;
+
+              ##
+              # Logging
+              ##
+              log_format main '$remote_addr - $remote_user [$time_local] "$request" '
+                              '$status $body_bytes_sent "$http_referer" '
+                              '"$http_user_agent" "$http_x_forwarded_for"';
+
+              access_log /var/log/nginx/access.log main;
+              error_log  /var/log/nginx/error.log warn;
+
+              ##
+              # Gzip
+              ##
+              gzip              on;
+              gzip_vary         on;
+              gzip_proxied      any;
+              gzip_comp_level   6;
+              gzip_buffers      16 8k;
+              gzip_http_version 1.1;
+              gzip_types
+                text/plain
+                text/css
+                text/xml
+                text/javascript
+                application/json
+                application/javascript
+                application/x-javascript
+                application/xml
+                application/xml+rss
+                application/vnd.ms-fontobject
+                application/x-font-ttf
+                font/opentype
+                image/svg+xml
+                image/x-icon;
+
+              ##
+              # Security headers
+              ##
+              add_header X-Frame-Options           SAMEORIGIN  always;
+              add_header X-Content-Type-Options    nosniff     always;
+              add_header X-XSS-Protection          "1; mode=block" always;
+              add_header Referrer-Policy           "strict-origin-when-cross-origin" always;
+
+              ##
+              # Virtual host configs
+              ##
+              include /etc/nginx/conf.d/*.conf;
+              include /etc/nginx/sites-enabled/*;
+          }
+      notify: Reload nginx
+
+    - name: Ensure nginx is started and enabled
+      ansible.builtin.service:
+        name: nginx
+        state: started
+        enabled: true
+
+  handlers:
+    - name: Reload nginx
+      ansible.builtin.service:
+        name: nginx
+        state: reloaded

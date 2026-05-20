@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: marketplace
+  namespace: xp-panel
+  labels:
+    app: marketplace
+    app.kubernetes.io/component: marketplace
+spec:
+  selector:
+    app: marketplace
+  ports:
+    - name: http
+      port: 8092
+      targetPort: 8092
+      protocol: TCP
+  type: ClusterIP
