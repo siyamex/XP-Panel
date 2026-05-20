@@ -48,6 +48,8 @@ func main() {
 	v1.Post("/security/geoip", sh.AddGeoIPBlock)
 	v1.Delete("/security/geoip/:countryCode", sh.RemoveGeoIPBlock)
 	v1.Get("/security/geoip/lookup", sh.LookupGeoIP)
+	v1.Get("/security/bgp/asn/:asn", sh.LookupASN)
+	v1.Get("/security/bgp/route", sh.LookupBGPRoute)
 
 	// ModSecurity WAF
 	v1.Get("/security/modsec/status",        sh.GetModSecStatus)

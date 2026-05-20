@@ -1,12 +1,17 @@
 package handler
 
 import (
-	"encoding/json"
-	"net/http"
+	"fmt"
 	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/xpanel/security/internal/geoip"
+)
+
+var (
+	geoResolver = geoip.New()
+	bgpMonitor  = geoip.NewBGPMonitor()
 )
 
 type GeoIPBlock struct {
@@ -80,31 +85,42 @@ func (h *SecurityHandler) RemoveGeoIPBlock(c *fiber.Ctx) error {
 	return c.SendStatus(204)
 }
 
-// GET /security/geoip/lookup?ip=1.2.3.4 — lookup IP geolocation using free API
+// GET /security/geoip/lookup?ip=1.2.3.4
 func (h *SecurityHandler) LookupGeoIP(c *fiber.Ctx) error {
 	ip := c.Query("ip")
 	if ip == "" {
 		ip = c.IP()
 	}
 
-	client := &http.Client{Timeout: 5 * time.Second}
-	resp, err := client.Get("https://ipapi.co/" + ip + "/json/")
+	rec, err := geoResolver.Lookup(c.Context(), ip)
 	if err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": "lookup failed"})
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
-	defer resp.Body.Close()
+	return c.JSON(rec)
+}
 
-	var result map[string]interface{}
-	_ = json.NewDecoder(resp.Body).Decode(&result)
+// GET /security/bgp/asn/:asn
+func (h *SecurityHandler) LookupASN(c *fiber.Ctx) error {
+	var asn int
+	if _, err := fmt.Sscanf(c.Params("asn"), "%d", &asn); err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "invalid ASN"})
+	}
+	info, err := bgpMonitor.LookupASN(c.Context(), asn)
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
+	return c.JSON(info)
+}
 
-	return c.JSON(fiber.Map{
-		"ip":           ip,
-		"country_code": result["country_code"],
-		"country_name": result["country_name"],
-		"city":         result["city"],
-		"region":       result["region"],
-		"org":          result["org"],
-		"latitude":     result["latitude"],
-		"longitude":    result["longitude"],
-	})
+// GET /security/bgp/route?ip=1.2.3.4
+func (h *SecurityHandler) LookupBGPRoute(c *fiber.Ctx) error {
+	ip := c.Query("ip")
+	if ip == "" {
+		return c.Status(400).JSON(fiber.Map{"error": "ip is required"})
+	}
+	routes, err := bgpMonitor.LookupIPRoute(c.Context(), ip)
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
+	return c.JSON(fiber.Map{"ip": ip, "routes": routes})
 }
