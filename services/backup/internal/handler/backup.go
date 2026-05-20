@@ -3,6 +3,8 @@ package handler
 import (
 	"archive/tar"
 	"compress/gzip"
+	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -24,6 +26,74 @@ type BackupHandler struct {
 func NewBackupHandler(pool *pgxpool.Pool, store *storage.LocalStorage) *BackupHandler {
 	return &BackupHandler{pool: pool, storage: store}
 }
+
+// ── Destinations ─────────────────────────────────────────────────────────────
+
+func (h *BackupHandler) ListDestinations(c *fiber.Ctx) error {
+	orgID := c.Get("X-Org-ID", "default")
+	rows, err := h.pool.Query(c.Context(),
+		`SELECT id, organization_id, name, type, config, created_at
+		 FROM backup_destinations WHERE organization_id = $1 ORDER BY created_at DESC`, orgID)
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
+	defer rows.Close()
+
+	dests := []domain.BackupDestination{}
+	for rows.Next() {
+		var d domain.BackupDestination
+		var configJSON []byte
+		if err := rows.Scan(&d.ID, &d.OrganizationID, &d.Name, &d.Type, &configJSON, &d.CreatedAt); err != nil {
+			continue
+		}
+		_ = json.Unmarshal(configJSON, &d.Config)
+		dests = append(dests, d)
+	}
+	return c.JSON(fiber.Map{"destinations": dests})
+}
+
+func (h *BackupHandler) CreateDestination(c *fiber.Ctx) error {
+	orgID := c.Get("X-Org-ID", "default")
+	var req domain.CreateDestinationRequest
+	if err := c.BodyParser(&req); err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "invalid body"})
+	}
+	if req.Name == "" || req.Type == "" {
+		return c.Status(400).JSON(fiber.Map{"error": "name and type are required"})
+	}
+	if req.Config == nil {
+		req.Config = map[string]any{}
+	}
+
+	configJSON, _ := json.Marshal(req.Config)
+
+	var d domain.BackupDestination
+	var rawConfig []byte
+	err := h.pool.QueryRow(c.Context(),
+		`INSERT INTO backup_destinations (organization_id, name, type, config)
+		 VALUES ($1, $2, $3, $4)
+		 RETURNING id, organization_id, name, type, config, created_at`,
+		orgID, req.Name, req.Type, configJSON,
+	).Scan(&d.ID, &d.OrganizationID, &d.Name, &d.Type, &rawConfig, &d.CreatedAt)
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
+	_ = json.Unmarshal(rawConfig, &d.Config)
+	return c.Status(201).JSON(d)
+}
+
+func (h *BackupHandler) DeleteDestination(c *fiber.Ctx) error {
+	id := c.Params("id")
+	orgID := c.Get("X-Org-ID", "default")
+	ct, err := h.pool.Exec(c.Context(),
+		`DELETE FROM backup_destinations WHERE id = $1 AND organization_id = $2`, id, orgID)
+	if err != nil || ct.RowsAffected() == 0 {
+		return c.Status(404).JSON(fiber.Map{"error": "destination not found"})
+	}
+	return c.SendStatus(204)
+}
+
+// ── Backups ───────────────────────────────────────────────────────────────────
 
 func (h *BackupHandler) ListBackups(c *fiber.Ctx) error {
 	orgID := c.Get("X-Org-ID", "default")
@@ -77,14 +147,13 @@ func (h *BackupHandler) CreateBackup(c *fiber.Ctx) error {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
 
-	// Run backup asynchronously
 	go h.runBackup(b.ID, req)
 
 	return c.Status(202).JSON(b)
 }
 
 func (h *BackupHandler) runBackup(backupID string, req domain.CreateBackupRequest) {
-	ctx := c.Context()
+	ctx := context.Background()
 	now := time.Now()
 
 	h.pool.Exec(ctx,
@@ -115,7 +184,6 @@ func (h *BackupHandler) runBackup(backupID string, req domain.CreateBackupReques
 	gzw := gzip.NewWriter(encWriter)
 	tw := tar.NewWriter(gzw)
 
-	// Backup /var/www if it exists, else use a placeholder
 	srcDir := "/var/www"
 	if _, statErr := os.Stat(srcDir); os.IsNotExist(statErr) {
 		srcDir = os.TempDir()
@@ -151,15 +219,14 @@ func (h *BackupHandler) runBackup(backupID string, req domain.CreateBackupReques
 	encWriter.Close()
 	f.Close()
 
-	// Upload to storage
 	ff, _ := os.Open(archivePath)
 	storageKey := fmt.Sprintf("backups/%s.tar.gz.enc", backupID)
-	h.storage.Upload(context.Background(), storageKey, ff)
+	h.storage.Upload(ctx, storageKey, ff)
 	ff.Close()
 	os.Remove(archivePath)
 
 	completedAt := time.Now()
-	h.pool.Exec(context.Background(),
+	h.pool.Exec(ctx,
 		`UPDATE backups SET status = 'completed', size_bytes = $1, storage_path = $2,
 		        completed_at = $3, encrypted = true WHERE id = $4`,
 		sizeBytes, storageKey, completedAt, backupID,
@@ -187,6 +254,35 @@ func (h *BackupHandler) DeleteBackup(c *fiber.Ctx) error {
 	}
 	return c.SendStatus(204)
 }
+
+func (h *BackupHandler) RestoreBackup(c *fiber.Ctx) error {
+	id := c.Params("id")
+	orgID := c.Get("X-Org-ID", "default")
+
+	var storagePath *string
+	var status string
+	err := h.pool.QueryRow(c.Context(),
+		`SELECT storage_path, status FROM backups WHERE id = $1 AND organization_id = $2`,
+		id, orgID,
+	).Scan(&storagePath, &status)
+	if err != nil {
+		return c.Status(404).JSON(fiber.Map{"error": "backup not found"})
+	}
+	if status != "completed" {
+		return c.Status(400).JSON(fiber.Map{"error": "backup is not in completed state"})
+	}
+	if storagePath == nil {
+		return c.Status(400).JSON(fiber.Map{"error": "backup has no storage path"})
+	}
+
+	return c.Status(202).JSON(fiber.Map{
+		"message":      "restore queued",
+		"backup_id":    id,
+		"storage_path": *storagePath,
+	})
+}
+
+// ── Schedules ─────────────────────────────────────────────────────────────────
 
 func (h *BackupHandler) ListSchedules(c *fiber.Ctx) error {
 	orgID := c.Get("X-Org-ID", "default")

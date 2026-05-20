@@ -10,6 +10,7 @@ import (
 	"github.com/xpanel/monitoring/internal/domain"
 )
 
+
 type MetricsHandler struct {
 	pool *pgxpool.Pool
 }
@@ -121,4 +122,46 @@ func (h *MetricsHandler) ListIncidents(c *fiber.Ctx) error {
 		incidents = append(incidents, i)
 	}
 	return c.JSON(fiber.Map{"incidents": incidents})
+}
+
+func (h *MetricsHandler) AcknowledgeIncident(c *fiber.Ctx) error {
+	id := c.Params("id")
+	orgID := c.Get("X-Org-ID", "default")
+	now := time.Now()
+
+	var i domain.Incident
+	err := h.pool.QueryRow(c.Context(),
+		`UPDATE incidents SET status = 'acknowledged', acknowledged_at = $1
+		 WHERE id = $2 AND organization_id = $3 AND status = 'open'
+		 RETURNING id, organization_id, alert_rule_id, server_id, title, status, severity,
+		           metric, value, threshold, started_at, resolved_at, acknowledged_at`,
+		now, id, orgID,
+	).Scan(&i.ID, &i.OrganizationID, &i.AlertRuleID, &i.ServerID,
+		&i.Title, &i.Status, &i.Severity, &i.Metric, &i.Value, &i.Threshold,
+		&i.StartedAt, &i.ResolvedAt, &i.AcknowledgedAt)
+	if err != nil {
+		return c.Status(404).JSON(fiber.Map{"error": "incident not found or already acknowledged"})
+	}
+	return c.JSON(i)
+}
+
+func (h *MetricsHandler) ResolveIncident(c *fiber.Ctx) error {
+	id := c.Params("id")
+	orgID := c.Get("X-Org-ID", "default")
+	now := time.Now()
+
+	var i domain.Incident
+	err := h.pool.QueryRow(c.Context(),
+		`UPDATE incidents SET status = 'resolved', resolved_at = $1
+		 WHERE id = $2 AND organization_id = $3 AND status != 'resolved'
+		 RETURNING id, organization_id, alert_rule_id, server_id, title, status, severity,
+		           metric, value, threshold, started_at, resolved_at, acknowledged_at`,
+		now, id, orgID,
+	).Scan(&i.ID, &i.OrganizationID, &i.AlertRuleID, &i.ServerID,
+		&i.Title, &i.Status, &i.Severity, &i.Metric, &i.Value, &i.Threshold,
+		&i.StartedAt, &i.ResolvedAt, &i.AcknowledgedAt)
+	if err != nil {
+		return c.Status(404).JSON(fiber.Map{"error": "incident not found or already resolved"})
+	}
+	return c.JSON(i)
 }

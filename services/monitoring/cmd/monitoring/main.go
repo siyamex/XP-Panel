@@ -52,6 +52,8 @@ func main() {
 	mon.Post("/alerts/rules", mh.CreateAlertRule)
 	mon.Delete("/alerts/rules/:id", mh.DeleteAlertRule)
 	mon.Get("/incidents", mh.ListIncidents)
+	mon.Put("/incidents/:id/acknowledge", mh.AcknowledgeIncident)
+	mon.Put("/incidents/:id/resolve", mh.ResolveIncident)
 
 	app.Get("/health", func(c *fiber.Ctx) error {
 		return c.JSON(fiber.Map{"status": "ok", "service": "monitoring"})

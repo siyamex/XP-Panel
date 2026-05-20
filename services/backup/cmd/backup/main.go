@@ -42,9 +42,19 @@ func main() {
 	app.Use(logger.New(), cors.New())
 
 	v1 := app.Group("/api/v1")
+
+	// Destinations
+	v1.Get("/backups/destinations", bh.ListDestinations)
+	v1.Post("/backups/destinations", bh.CreateDestination)
+	v1.Delete("/backups/destinations/:id", bh.DeleteDestination)
+
+	// Backups
 	v1.Get("/backups", bh.ListBackups)
 	v1.Post("/backups", bh.CreateBackup)
 	v1.Delete("/backups/:id", bh.DeleteBackup)
+	v1.Post("/backups/:id/restore", bh.RestoreBackup)
+
+	// Schedules
 	v1.Get("/backups/schedules", bh.ListSchedules)
 	v1.Post("/backups/schedules", bh.CreateSchedule)
 	v1.Delete("/backups/schedules/:id", bh.DeleteSchedule)

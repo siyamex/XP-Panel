@@ -1,23 +1,5 @@
 -- +goose Up
-CREATE TABLE IF NOT EXISTS database_instances (
-  id              UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
-  organization_id UUID        NOT NULL,
-  name            VARCHAR(100) NOT NULL,
-  db_type         VARCHAR(20)  NOT NULL DEFAULT 'postgresql'
-                  CHECK (db_type IN ('postgresql','mysql','mariadb')),
-  db_name         VARCHAR(100) NOT NULL,
-  host            VARCHAR(255) NOT NULL DEFAULT 'localhost',
-  port            INT          NOT NULL DEFAULT 5432,
-  status          VARCHAR(20)  NOT NULL DEFAULT 'active',
-  size_mb         NUMERIC(10,2) NOT NULL DEFAULT 0,
-  created_at      TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
-  updated_at      TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
-  UNIQUE(organization_id, name)
-);
-
-ALTER TABLE database_users ADD COLUMN IF NOT EXISTS database_id UUID REFERENCES database_instances(id) ON DELETE CASCADE;
-ALTER TABLE database_users DROP COLUMN IF EXISTS password_hash;
+-- Schema already correct in 001_create_databases.sql
 
 -- +goose Down
-ALTER TABLE database_users DROP COLUMN IF EXISTS database_id;
-DROP TABLE IF EXISTS database_instances;
+SELECT 1;
