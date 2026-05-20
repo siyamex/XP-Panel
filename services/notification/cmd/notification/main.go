@@ -69,7 +69,9 @@ func main() {
 	api := app.Group("/api/v1/notifications")
 	api.Get("/", h.List)
 	api.Put("/:id/read", h.MarkRead)
+	api.Patch("/:id/read", h.MarkRead)   // frontend alias
 	api.Put("/read-all", h.MarkAllRead)
+	api.Post("/read-all", h.MarkAllRead) // frontend alias
 	api.Delete("/:id", h.Delete)
 	api.Get("/unread-count", h.UnreadCount)
 	api.Get("/preferences", h.GetPreferences)
