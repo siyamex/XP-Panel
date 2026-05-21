@@ -23,13 +23,13 @@ export const domainsApi = {
 
 export const sslApi = {
   list: () =>
-    api.get<{ certificates: SSLCertificate[]; total: number }>('/webserver/ssl'),
+    api.get<{ certs: SSLCertificate[]; total: number }>('/webserver/ssl'),
 
   issue: (data: { domain: string; san_domains?: string[]; provider?: string; challenge_type?: string }) =>
     api.post<SSLCertificate>('/webserver/ssl/issue', data),
 
   renew: (id: string) =>
-    api.post<SSLCertificate>(`/webserver/ssl/${id}/renew`),
+    api.post<SSLCertificate>(`/webserver/ssl/renew/${id}`),
 
   delete: (id: string) =>
     api.delete(`/webserver/ssl/${id}`),

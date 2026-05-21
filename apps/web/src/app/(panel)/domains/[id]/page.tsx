@@ -214,7 +214,7 @@ function SSLTab({ domainName }: { domainName: string }) {
     select: (r) => r.data,
   })
 
-  const cert = data?.certificates?.find((c: any) => c.domain === domainName)
+  const cert = data?.certs?.find((c: any) => c.domain === domainName)
   const qc = useQueryClient()
 
   const renewMutation = useMutation({

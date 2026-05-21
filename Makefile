@@ -18,6 +18,7 @@ help:
 	@echo "  make lint          Run all linters"
 	@echo "  make migrate       Run all database migrations (up)"
 	@echo "  make migrate-down  Roll back last migration"
+	@echo "  make seed          Load demo seed data"
 	@echo "  make install       Install all dependencies"
 	@echo "  make clean         Stop containers and remove volumes"
 	@echo "  make db-shell      Open PostgreSQL shell"
@@ -159,6 +160,14 @@ logs: ## Tail all service logs
 
 logs-svc: ## Tail a single service: make logs-svc SVC=auth
 	docker compose logs -f --tail=100 $(SVC)
+
+seed: ## Load demo seed data into the database
+	@echo "Loading seed data..."
+	docker compose exec -T postgres psql -U xppanel xppanel < scripts/seed.sql
+	@echo "✅ Seed data loaded"
+
+seed-password: ## Set demo user passwords (run after seed)
+	@bash scripts/create-admin.sh
 
 db-shell: ## Open PostgreSQL shell
 	docker compose exec postgres psql -U xppanel xppanel

@@ -50,7 +50,7 @@ export default function SSLPage() {
     onError: () => toast.error('Failed to delete certificate'),
   })
 
-  const certs = data?.certificates ?? []
+  const certs = data?.certs ?? []
   const activeCount   = certs.filter(c => c.status === 'active').length
   const expiringCount = certs.filter(c => { const d = daysUntil(c.expires_at); return d !== null && d >= 0 && d < 30 }).length
   const expiredCount  = certs.filter(c => c.status === 'expired' || (daysUntil(c.expires_at) ?? 1) < 0).length
