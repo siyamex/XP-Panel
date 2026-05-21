@@ -91,3 +91,23 @@ func (s *MFAService) DisableMFA(ctx context.Context, userID uuid.UUID, code stri
 	}
 	return s.repo.DisableMFA(ctx, userID)
 }
+
+// VerifyBackupCode checks a one-time backup code (stored as the MFA secret with a "bk:" prefix).
+// This is a simplified implementation; production should store backup codes separately.
+func (s *MFAService) VerifyBackupCode(ctx context.Context, userID uuid.UUID, code string) error {
+	secret, err := s.repo.GetMFASecret(ctx, userID)
+	if err != nil {
+		return ErrInvalidMFACode
+	}
+	// Backup codes are stored with a "bk:" prefix followed by a pipe-separated list
+	if !strings.HasPrefix(secret, "bk:") {
+		return ErrInvalidMFACode
+	}
+	codes := strings.Split(strings.TrimPrefix(secret, "bk:"), "|")
+	for _, c := range codes {
+		if strings.EqualFold(strings.TrimSpace(c), strings.TrimSpace(code)) {
+			return nil
+		}
+	}
+	return ErrInvalidMFACode
+}

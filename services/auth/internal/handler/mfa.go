@@ -2,6 +2,8 @@ package handler
 
 import (
 	"github.com/gofiber/fiber/v2"
+	"github.com/google/uuid"
+	"github.com/xp-panel/xp-panel/services/auth/internal/domain"
 	"github.com/xp-panel/xp-panel/services/auth/internal/service"
 )
 
@@ -52,26 +54,49 @@ func (h *MFAHandler) ConfirmTOTP(c *fiber.Ctx) error {
 // Used when MFA is required after login (tempToken provided)
 func (h *MFAHandler) Verify(c *fiber.Ctx) error {
 	var body struct {
-		TempToken string `json:"tempToken"`
-		Code      string `json:"code"`
+		TempToken    string `json:"tempToken"`
+		MFASessionID string `json:"mfa_session_id"` // frontend alias
+		Code         string `json:"code"`
+		Backup       bool   `json:"backup"`
 	}
 	if err := c.BodyParser(&body); err != nil {
 		return fiber.NewError(fiber.StatusBadRequest, "invalid request body")
 	}
+	// Accept either field name
+	token := body.TempToken
+	if token == "" {
+		token = body.MFASessionID
+	}
 
 	// Parse temp token
-	claims, err := h.jwt.ParseToken(body.TempToken)
+	claims, err := h.jwt.ParseToken(token)
 	if err != nil {
 		return fiber.NewError(fiber.StatusUnauthorized, "invalid temp token")
 	}
 
-	if err := h.mfa.VerifyTOTP(c.Context(), claims.UserID, body.Code); err != nil {
-		return fiber.NewError(fiber.StatusBadRequest, "invalid MFA code")
+	if body.Backup {
+		if err := h.mfa.VerifyBackupCode(c.Context(), claims.UserID, body.Code); err != nil {
+			return fiber.NewError(fiber.StatusBadRequest, "invalid backup code")
+		}
+	} else {
+		if err := h.mfa.VerifyTOTP(c.Context(), claims.UserID, body.Code); err != nil {
+			return fiber.NewError(fiber.StatusBadRequest, "invalid MFA code")
+		}
 	}
 
-	// Issue full token pair with MFADone=true
-	// TODO: fetch user and issue real token pair
-	return c.JSON(fiber.Map{"message": "MFA verified"})
+	// Build a minimal User from claims to issue a full token pair
+	user := &domain.User{
+		ID:             claims.UserID,
+		OrganizationID: claims.OrgID,
+		Email:          claims.Email,
+		Username:       claims.Username,
+	}
+	sessionID := uuid.New()
+	pair, _, err := h.jwt.IssueTokenPair(user, sessionID, true)
+	if err != nil {
+		return fiber.NewError(fiber.StatusInternalServerError, "could not issue tokens")
+	}
+	return c.JSON(fiber.Map{"data": pair})
 }
 
 // POST /api/v1/auth/mfa/disable

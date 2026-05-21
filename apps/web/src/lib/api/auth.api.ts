@@ -70,11 +70,11 @@ export const authApi = {
     return data;
   },
 
-  verifyMFA: async (tempToken: string, code: string) => {
+  verifyMFA: async (params: { mfa_session_id: string; code: string; backup?: boolean }) => {
     const { data } = await apiClient.post<{
       data?: TokenPair;
       message?: string;
-    }>("/auth/mfa/verify", { tempToken, code });
+    }>("/auth/mfa/verify", params);
     return data;
   },
 
