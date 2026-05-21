@@ -174,10 +174,11 @@ function IssueCertModal({ onClose }: { onClose: () => void }) {
     defaultValues: { provider: 'letsencrypt' },
   })
   const mutation = useMutation({
-    mutationFn: (d: { domain: string; provider: string }) => webserverApi.issueSSL(d.domain, d.provider),
-    onSuccess: (res) => {
+    mutationFn: (d: { domain: string; provider: string }) =>
+      webserverApi.issueSSL({ domain: d.domain, email: '', sans: [] }),
+    onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['ssl-certs'] })
-      toast.success(res.data.message ?? 'Certificate issuance queued')
+      toast.success('Certificate issuance queued')
       onClose()
     },
     onError: () => toast.error('Failed to issue certificate'),

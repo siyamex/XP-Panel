@@ -1,21 +1,21 @@
 go 1.23
 
 use (
-	./services/gateway
-	./services/auth
-	./services/domains
-	./services/dns
-	./services/mail
-	./services/webserver
-	./services/filemanager
-	./services/dbmanager
-	./services/backup
-	./services/monitoring
-	./services/billing
 	./services/ai
-	./services/security
-	./services/marketplace
+	./services/auth
+	./services/backup
+	./services/billing
+	./services/dbmanager
 	./services/devops
+	./services/dns
 	./services/docker
+	./services/domains
+	./services/filemanager
+	./services/gateway
+	./services/mail
+	./services/marketplace
+	./services/monitoring
 	./services/notification
+	./services/security
+	./services/webserver
 )

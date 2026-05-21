@@ -13,7 +13,7 @@ export default function TwoFactorPage() {
   const router = useRouter()
   const params = useSearchParams()
   const sessionId = params.get('session')
-  const { setUser, setTokens } = useAuthStore()
+  const { setTokens } = useAuthStore()
 
   const [digits, setDigits] = useState(['', '', '', '', '', ''])
   const [loading, setLoading] = useState(false)
@@ -53,8 +53,7 @@ export default function TwoFactorPage() {
     setLoading(true)
     try {
       const res = await authApi.verifyMFA({ mfa_session_id: sessionId, code: otp })
-      setUser(res.user)
-      setTokens(res.access_token, res.refresh_token)
+      if (res.data) setTokens(res.data.accessToken, res.data.refreshToken)
       router.replace('/dashboard')
     } catch {
       toast.error('Invalid code. Try again.')
@@ -70,8 +69,7 @@ export default function TwoFactorPage() {
     setLoading(true)
     try {
       const res = await authApi.verifyMFA({ mfa_session_id: sessionId, code: backupCode, backup: true })
-      setUser(res.user)
-      setTokens(res.access_token, res.refresh_token)
+      if (res.data) setTokens(res.data.accessToken, res.data.refreshToken)
       router.replace('/dashboard')
     } catch {
       toast.error('Invalid backup code.')

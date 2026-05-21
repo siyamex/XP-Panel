@@ -61,7 +61,7 @@ export default function LoginPage() {
   const onMFASubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const result = await authApi.verifyMFA(tempToken, mfaCode);
+      const result = await authApi.verifyMFA({ mfa_session_id: tempToken, code: mfaCode });
       if (result.data) {
         setTokens(result.data.accessToken, result.data.refreshToken);
         toast.success("Welcome back!");

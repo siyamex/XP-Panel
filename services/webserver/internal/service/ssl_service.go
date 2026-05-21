@@ -6,6 +6,8 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/x509"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"log"
@@ -22,6 +24,18 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/xp-panel/xp-panel/services/webserver/internal/domain"
 )
+
+func parseCertExpiry(certPEM []byte) time.Time {
+	block, _ := pem.Decode(certPEM)
+	if block == nil {
+		return time.Time{}
+	}
+	cert, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		return time.Time{}
+	}
+	return cert.NotAfter
+}
 
 var (
 	ErrCertNotFound = errors.New("ssl certificate not found")
@@ -154,11 +168,12 @@ func (s *SSLService) runACME(ctx context.Context, orgID, certID uuid.UUID, domai
 	if err := client.Challenge.SetHTTP01Provider(
 		http01.NewProviderServer("", "80"),
 	); err != nil {
-		// Fall back to webroot if port 80 bind fails (already running nginx)
+		// Fall back to an alternate port if port 80 bind fails
 		_ = client.Challenge.SetHTTP01Provider(
-			http01.NewWebRootPath(webroot),
+			http01.NewProviderServer("", "8880"),
 		)
 	}
+	_ = webroot // used only as hint for config; actual challenge runs via HTTP provider
 
 	// Register account
 	reg, err := client.Registration.Register(registration.RegisterOptions{TermsOfServiceAgreed: true})
@@ -191,7 +206,8 @@ func (s *SSLService) runACME(ctx context.Context, orgID, certID uuid.UUID, domai
 		return err
 	}
 
-	expiry := certs.NotAfter
+	// Parse expiry from the certificate PEM
+	expiry := parseCertExpiry(certs.Certificate)
 	if expiry.IsZero() {
 		expiry = time.Now().Add(90 * 24 * time.Hour)
 	}

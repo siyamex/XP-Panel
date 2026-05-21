@@ -12,7 +12,8 @@ export interface Passkey {
 export const passkeyApi = {
   list: () => api.get<{ passkeys: Passkey[]; total: number }>('/auth/passkeys'),
   delete: (id: string) => api.delete(`/auth/passkeys/${id}`),
-  beginRegistration: () => api.get<Record<string, unknown>>('/auth/passkeys/register/begin'),
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  beginRegistration: () => api.get<any>('/auth/passkeys/register/begin'),
   finishRegistration: (credential: unknown, deviceName?: string) =>
     api.post<{ ok: boolean; device_name: string }>('/auth/passkeys/register/finish', { ...credential as object, device_name: deviceName }),
   beginAuthentication: (email: string) =>

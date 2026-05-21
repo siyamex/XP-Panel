@@ -15,7 +15,7 @@ export function getCurrentUser() {
 }
 
 export function clearSession() {
-  useAuthStore.getState().clearAuth()
+  useAuthStore.getState().logout()
 }
 
 export function hasRole(role: string): boolean {

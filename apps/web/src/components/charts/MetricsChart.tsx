@@ -21,10 +21,21 @@ const generateData = () => {
 
 const data = generateData();
 
-export function MetricsChart({ compact }: { compact?: boolean }) {
+export function MetricsChart({
+  compact,
+  data: externalData,
+  height,
+}: {
+  compact?: boolean
+  data?: Array<{ timestamp: string; CPU: number; RAM: number; Disk: number }>
+  height?: number
+}) {
+  const chartData = externalData
+    ? externalData.map(d => ({ time: d.timestamp, cpu: d.CPU, ram: d.RAM, network: d.Disk }))
+    : data
   return (
-    <ResponsiveContainer width="100%" height={compact ? 140 : 220}>
-      <AreaChart data={data} margin={{ top: 5, right: 5, left: -20, bottom: 0 }}>
+    <ResponsiveContainer width="100%" height={height ?? (compact ? 140 : 220)}>
+      <AreaChart data={chartData} margin={{ top: 5, right: 5, left: -20, bottom: 0 }}>
         <defs>
           <linearGradient id="cpuGrad" x1="0" y1="0" x2="0" y2="1">
             <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.2} />
