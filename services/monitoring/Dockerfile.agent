@@ -1,0 +1,27 @@
+# ── Build stage ──────────────────────────────────────────────────────────────
+FROM golang:1.23-alpine AS builder
+
+RUN apk add --no-cache git ca-certificates tzdata
+
+WORKDIR /build
+
+COPY go.mod go.sum ./
+RUN go mod download
+
+COPY . .
+
+ARG VERSION=dev
+RUN CGO_ENABLED=0 GOOS=linux go build \
+    -ldflags="-s -w -X main.version=${VERSION}" \
+    -o /app/xp-agent \
+    ./cmd/agent
+
+# ── Runtime stage (minimal — runs on target servers) ──────────────────────────
+FROM alpine:3.20
+
+RUN apk add --no-cache ca-certificates tzdata procps
+
+COPY --from=builder /app/xp-agent /xp-agent
+
+# Agent runs as root to read /proc metrics
+ENTRYPOINT ["/xp-agent"]

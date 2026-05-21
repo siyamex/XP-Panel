@@ -1,0 +1,447 @@
+version: "3.9"
+
+# XP-Panel — Full Development Stack
+# Usage: docker compose up -d
+
+x-common-env: &common-env
+  DATABASE_URL: postgres://xppanel:${POSTGRES_PASSWORD:-devpassword}@postgres:5432/xppanel
+  REDIS_URL: redis://redis:6379
+  JWT_SECRET: ${JWT_SECRET:-dev-jwt-secret-change-in-production}
+
+x-service-defaults: &service-defaults
+  restart: unless-stopped
+  networks: [xppanel]
+  depends_on:
+    postgres:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+
+# ─── Infrastructure ────────────────────────────────────────────────────────────
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: xppanel
+      POSTGRES_USER: xppanel
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-devpassword}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U xppanel -d xppanel"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks: [xppanel]
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks: [xppanel]
+    restart: unless-stopped
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:24-alpine
+    ports:
+      - "8123:8123"
+      - "9000:9000"
+    volumes:
+      - chdata:/var/lib/clickhouse
+      - ./clickhouse/config.xml:/etc/clickhouse-server/config.d/custom.xml:ro
+    environment:
+      CLICKHOUSE_DB: xppanel
+      CLICKHOUSE_USER: default
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8123/ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks: [xppanel]
+    restart: unless-stopped
+
+  vault:
+    image: hashicorp/vault:1.16
+    command: server -dev -dev-root-token-id=${VAULT_TOKEN:-dev-root-token}
+    ports:
+      - "8200:8200"
+    environment:
+      VAULT_DEV_ROOT_TOKEN_ID: ${VAULT_TOKEN:-dev-root-token}
+      VAULT_DEV_LISTEN_ADDRESS: "0.0.0.0:8200"
+    cap_add:
+      - IPC_LOCK
+    networks: [xppanel]
+    restart: unless-stopped
+
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+    volumes:
+      - miniodata:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks: [xppanel]
+    restart: unless-stopped
+
+  powerdns:
+    image: powerdns/pdns-auth:49
+    ports:
+      - "5300:53/tcp"
+      - "5300:53/udp"
+      - "8081:8081"
+    environment:
+      PDNS_AUTH_API_KEY: ${PDNS_API_KEY:-pdnsapikey}
+      PDNS_AUTH_WEBSERVER: "yes"
+      PDNS_AUTH_WEBSERVER_PORT: "8081"
+      PDNS_AUTH_WEBSERVER_ALLOW_FROM: "0.0.0.0/0,::/0"
+      PDNS_AUTH_LAUNCH: gsqlite3
+      PDNS_AUTH_GSQLITE3_DATABASE: /var/lib/pdns/pdns.sqlite3
+    volumes:
+      - pdnsdata:/var/lib/pdns
+    networks: [xppanel]
+    restart: unless-stopped
+
+  mailhog:
+    image: mailhog/mailhog:latest
+    ports:
+      - "1025:1025"
+      - "8025:8025"
+    networks: [xppanel]
+    restart: unless-stopped
+
+# ─── Application Services ──────────────────────────────────────────────────────
+
+  gateway:
+    build:
+      context: ../../services/gateway
+      dockerfile: Dockerfile
+      args:
+        VERSION: ${VERSION:-dev}
+    ports:
+      - "8080:8080"
+    environment:
+      <<: *common-env
+      PORT: "8080"
+      VAULT_ADDR: http://vault:8200
+      VAULT_TOKEN: ${VAULT_TOKEN:-dev-root-token}
+      AUTH_SERVICE_URL: http://auth:8081
+      DNS_SERVICE_URL: http://dns:8082
+      MAIL_SERVICE_URL: http://mail:8083
+      WEBSERVER_SERVICE_URL: http://webserver:8084
+      FILEMANAGER_SERVICE_URL: http://filemanager:8085
+      DBMANAGER_SERVICE_URL: http://dbmanager:8086
+      BACKUP_SERVICE_URL: http://backup:8087
+      MONITORING_SERVICE_URL: http://monitoring:8088
+      BILLING_SERVICE_URL: http://billing:8089
+      AI_SERVICE_URL: http://ai:8090
+      SECURITY_SERVICE_URL: http://security:8091
+      MARKETPLACE_SERVICE_URL: http://marketplace:8092
+      DEVOPS_SERVICE_URL: http://devops:8093
+      NOTIFICATION_SERVICE_URL: http://notification:8094
+      DOMAINS_SERVICE_URL: http://domains:8095
+      DOCKER_SERVICE_URL: http://docker-svc:8096
+    <<: *service-defaults
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      auth:
+        condition: service_started
+
+  auth:
+    build:
+      context: ../../services/auth
+      dockerfile: Dockerfile
+      args:
+        VERSION: ${VERSION:-dev}
+    environment:
+      <<: *common-env
+      PORT: "8081"
+      VAULT_ADDR: http://vault:8200
+      VAULT_TOKEN: ${VAULT_TOKEN:-dev-root-token}
+      JWT_EXPIRY: ${JWT_EXPIRY:-15m}
+      REFRESH_TOKEN_EXPIRY: ${REFRESH_TOKEN_EXPIRY:-7d}
+      SMTP_HOST: mailhog
+      SMTP_PORT: "1025"
+      SMTP_FROM: noreply@xp-panel.local
+    <<: *service-defaults
+
+  dns:
+    build:
+      context: ../../services/dns
+      dockerfile: Dockerfile
+      args:
+        VERSION: ${VERSION:-dev}
+    environment:
+      <<: *common-env
+      PORT: "8082"
+      PDNS_API_URL: http://powerdns:8081
+      PDNS_API_KEY: ${PDNS_API_KEY:-pdnsapikey}
+    <<: *service-defaults
+
+  mail:
+    build:
+      context: ../../services/mail
+      dockerfile: Dockerfile
+      args:
+        VERSION: ${VERSION:-dev}
+    environment:
+      <<: *common-env
+      PORT: "8083"
+      SMTP_HOST: mailhog
+      SMTP_PORT: "1025"
+    <<: *service-defaults
+
+  webserver:
+    build:
+      context: ../../services/webserver
+      dockerfile: Dockerfile
+      args:
+        VERSION: ${VERSION:-dev}
+    environment:
+      <<: *common-env
+      PORT: "8084"
+    <<: *service-defaults
+
+  filemanager:
+    build:
+      context: ../../services/filemanager
+      dockerfile: Dockerfile
+      args:
+        VERSION: ${VERSION:-dev}
+    environment:
+      <<: *common-env
+      PORT: "8085"
+      FILES_ROOT: /var/www
+    volumes:
+      - wwwdata:/var/www
+    <<: *service-defaults
+
+  dbmanager:
+    build:
+      context: ../../services/dbmanager
+      dockerfile: Dockerfile
+      args:
+        VERSION: ${VERSION:-dev}
+    environment:
+      <<: *common-env
+      PORT: "8086"
+      MYSQL_HOST: ${MYSQL_HOST:-}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-}
+    <<: *service-defaults
+
+  backup:
+    build:
+      context: ../../services/backup
+      dockerfile: Dockerfile
+      args:
+        VERSION: ${VERSION:-dev}
+    environment:
+      <<: *common-env
+      PORT: "8087"
+      REDIS_ADDR: redis:6379
+      MINIO_ENDPOINT: http://minio:9000
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin}
+      BACKUP_ROOT: /backups
+    volumes:
+      - backupdata:/backups
+      - wwwdata:/var/www:ro
+    <<: *service-defaults
+
+  monitoring:
+    build:
+      context: ../../services/monitoring
+      dockerfile: Dockerfile
+      args:
+        VERSION: ${VERSION:-dev}
+    environment:
+      <<: *common-env
+      PORT: "8088"
+      CLICKHOUSE_URL: http://clickhouse:8123
+      CLICKHOUSE_DB: xppanel
+    <<: *service-defaults
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      clickhouse:
+        condition: service_healthy
+
+  billing:
+    build:
+      context: ../../services/billing
+      dockerfile: Dockerfile
+      args:
+        VERSION: ${VERSION:-dev}
+    environment:
+      <<: *common-env
+      PORT: "8089"
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
+    <<: *service-defaults
+
+  ai:
+    build:
+      context: ../../services/ai
+      dockerfile: Dockerfile
+      args:
+        VERSION: ${VERSION:-dev}
+    environment:
+      <<: *common-env
+      PORT: "8090"
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      LLAMA_CLI_PATH: /usr/local/bin/llama-cli
+      LLAMA_MODEL_PATH: /opt/models/default.gguf
+    volumes:
+      - llmmodels:/opt/models
+    <<: *service-defaults
+
+  security:
+    build:
+      context: ../../services/security
+      dockerfile: Dockerfile
+      args:
+        VERSION: ${VERSION:-dev}
+    environment:
+      <<: *common-env
+      PORT: "8091"
+      MAXMIND_ACCOUNT_ID: ${MAXMIND_ACCOUNT_ID:-}
+      MAXMIND_LICENSE_KEY: ${MAXMIND_LICENSE_KEY:-}
+    <<: *service-defaults
+
+  marketplace:
+    build:
+      context: ../../services/marketplace
+      dockerfile: Dockerfile
+      args:
+        VERSION: ${VERSION:-dev}
+    environment:
+      <<: *common-env
+      PORT: "8092"
+    volumes:
+      - wwwdata:/var/www
+      - /var/run/docker.sock:/var/run/docker.sock
+    <<: *service-defaults
+
+  devops:
+    build:
+      context: ../../services/devops
+      dockerfile: Dockerfile
+      args:
+        VERSION: ${VERSION:-dev}
+    environment:
+      <<: *common-env
+      PORT: "8093"
+      WORK_ROOT: /tmp/devops-runs
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - devopswork:/tmp/devops-runs
+    <<: *service-defaults
+
+  notification:
+    build:
+      context: ../../services/notification
+      dockerfile: Dockerfile
+      args:
+        VERSION: ${VERSION:-dev}
+    environment:
+      <<: *common-env
+      PORT: "8094"
+      SMTP_HOST: mailhog
+      SMTP_PORT: "1025"
+      SMTP_FROM: noreply@xp-panel.local
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+    <<: *service-defaults
+
+  domains:
+    build:
+      context: ../../services/domains
+      dockerfile: Dockerfile
+      args:
+        VERSION: ${VERSION:-dev}
+    environment:
+      <<: *common-env
+      PORT: "8095"
+    <<: *service-defaults
+
+  docker-svc:
+    build:
+      context: ../../services/docker
+      dockerfile: Dockerfile
+      args:
+        VERSION: ${VERSION:-dev}
+    environment:
+      <<: *common-env
+      PORT: "8096"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    <<: *service-defaults
+
+# ─── Frontend ──────────────────────────────────────────────────────────────────
+
+  web:
+    build:
+      context: ../../apps/web
+      dockerfile: Dockerfile
+      target: dev
+    ports:
+      - "3000:3000"
+    environment:
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8080}
+      NEXT_PUBLIC_WS_URL: ${NEXT_PUBLIC_WS_URL:-ws://localhost:8080}
+      NODE_ENV: development
+    volumes:
+      - ../../apps/web:/app
+      - /app/node_modules
+      - /app/.next
+    networks: [xppanel]
+    restart: unless-stopped
+    depends_on:
+      - gateway
+
+# ─── Networks & Volumes ────────────────────────────────────────────────────────
+
+networks:
+  xppanel:
+    driver: bridge
+
+volumes:
+  pgdata:
+  redisdata:
+  chdata:
+  miniodata:
+  pdnsdata:
+  wwwdata:
+  backupdata:
+  devopswork:
+  llmmodels:
