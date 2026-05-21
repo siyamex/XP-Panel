@@ -39,7 +39,7 @@ export function useServerMetrics({
   const [connected, setConnected] = useState(false)
 
   const { status } = useWebSocket<ServerMetrics>({
-    url: `${WS_BASE}/api/v1/monitoring/ws/${serverID}`,
+    url: `${WS_BASE}/ws/metrics/${serverID}`,
     enabled: enabled && !!serverID,
     onOpen: () => setConnected(true),
     onClose: () => setConnected(false),

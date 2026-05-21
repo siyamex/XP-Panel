@@ -61,18 +61,28 @@ func main() {
 	app := fiber.New()
 	app.Use(logger.New(), cors.New())
 
-	// WebSocket upgrade middleware
-	app.Use("/api/v1/monitoring/metrics/stream", func(c *fiber.Ctx) error {
+	// WebSocket upgrade middleware — covers both paths
+	wsUpgrade := func(c *fiber.Ctx) error {
 		if fiberws.IsWebSocketUpgrade(c) {
 			return c.Next()
 		}
 		return fiber.ErrUpgradeRequired
-	})
+	}
+	app.Use("/api/v1/monitoring/metrics/stream", wsUpgrade)
+	app.Use("/ws/metrics", wsUpgrade)
 
 	v1 := app.Group("/api/v1")
 	mon := v1.Group("/monitoring")
 	mon.Get("/metrics/current", mh.Current)
 	mon.Get("/metrics/stream", fiberws.New(handler.StreamMetrics))
+
+	// Gateway-forwarded WS path: /ws/metrics/:serverId
+	app.Get("/ws/metrics/:serverId", fiberws.New(func(c *fiberws.Conn) {
+		if c.Query("server_id") == "" {
+			c.Locals("serverId", c.Params("serverId"))
+		}
+		handler.StreamMetrics(c)
+	}))
 	mon.Get("/alerts/rules", mh.ListAlertRules)
 	mon.Post("/alerts/rules", mh.CreateAlertRule)
 	mon.Delete("/alerts/rules/:id", mh.DeleteAlertRule)
