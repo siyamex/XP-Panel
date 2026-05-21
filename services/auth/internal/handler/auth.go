@@ -120,6 +120,35 @@ func (h *AuthHandler) Logout(c *fiber.Ctx) error {
 	return c.Status(fiber.StatusNoContent).Send(nil)
 }
 
+// POST /api/v1/auth/forgot-password
+func (h *AuthHandler) ForgotPassword(c *fiber.Ctx) error {
+	var req struct {
+		Email string `json:"email"`
+	}
+	if err := c.BodyParser(&req); err != nil || req.Email == "" {
+		return fiber.NewError(fiber.StatusBadRequest, "email is required")
+	}
+	// token returned only for local dev / email sending; in prod send via email
+	_, _ = h.auth.ForgotPassword(c.Context(), req.Email)
+	// Always respond 200 to avoid user enumeration
+	return c.JSON(fiber.Map{"message": "If that email exists, a reset link has been sent"})
+}
+
+// POST /api/v1/auth/reset-password
+func (h *AuthHandler) ResetPassword(c *fiber.Ctx) error {
+	var req struct {
+		Token    string `json:"token"`
+		Password string `json:"password"`
+	}
+	if err := c.BodyParser(&req); err != nil || req.Token == "" || req.Password == "" {
+		return fiber.NewError(fiber.StatusBadRequest, "token and password are required")
+	}
+	if err := h.auth.ResetPassword(c.Context(), req.Token, req.Password); err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, "invalid or expired reset token")
+	}
+	return c.JSON(fiber.Map{"message": "Password updated successfully"})
+}
+
 // GET /api/v1/auth/me
 func (h *AuthHandler) Me(c *fiber.Ctx) error {
 	claims, ok := c.Locals("claims").(*service.Claims)

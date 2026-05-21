@@ -242,3 +242,29 @@ func (r *pgMFARepo) GetMFASecret(ctx context.Context, userID uuid.UUID) (string,
 	err := r.db.QueryRow(ctx, `SELECT mfa_secret FROM users WHERE id=$1 AND mfa_secret IS NOT NULL`, userID).Scan(&secret)
 	return secret, err
 }
+
+// ── Password reset ─────────────────────────────────────────────────────────────
+
+func (r *pgUserRepo) CreatePasswordReset(ctx context.Context, userID uuid.UUID, tokenHash string, expires time.Time) error {
+	_, err := r.db.Exec(ctx,
+		`INSERT INTO password_resets (user_id, token_hash, expires_at)
+		 VALUES ($1, $2, $3)
+		 ON CONFLICT (token_hash) DO NOTHING`,
+		userID, tokenHash, expires,
+	)
+	return err
+}
+
+func (r *pgUserRepo) ConsumePasswordReset(ctx context.Context, tokenHash string) (uuid.UUID, error) {
+	var userID uuid.UUID
+	err := r.db.QueryRow(ctx,
+		`UPDATE password_resets
+		 SET used_at = NOW()
+		 WHERE token_hash = $1
+		   AND used_at IS NULL
+		   AND expires_at > NOW()
+		 RETURNING user_id`,
+		tokenHash,
+	).Scan(&userID)
+	return userID, err
+}

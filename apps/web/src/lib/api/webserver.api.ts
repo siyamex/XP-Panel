@@ -54,13 +54,22 @@ export const webserverApi = {
     api.delete(`/webserver/vhosts/${id}`),
 
   listSSL: () =>
-    api.get<{ certificates: SSLCert[]; total: number }>('/webserver/ssl'),
+    api.get<{ certs: SSLCert[]; total: number }>('/webserver/ssl'),
 
-  issueSSL: (domain: string, provider = 'letsencrypt') =>
-    api.post<{ id: string; domain: string; provider: string; status: string; message: string }>('/webserver/ssl/issue', { domain, provider }),
+  getSSL: (id: string) =>
+    api.get<SSLCert>(`/webserver/ssl/${id}`),
+
+  issueSSL: (req: { domain: string; sans?: string[]; email: string; auto_renew?: boolean; webroot?: string }) =>
+    api.post<SSLCert>('/webserver/ssl/issue', req),
+
+  renewSSL: (id: string) =>
+    api.post<SSLCert>(`/webserver/ssl/renew/${id}`),
 
   deleteSSL: (id: string) =>
     api.delete(`/webserver/ssl/${id}`),
+
+  toggleAutoRenew: (id: string, auto_renew: boolean) =>
+    api.put<{ auto_renew: boolean }>(`/webserver/ssl/${id}/auto-renew`, { auto_renew }),
 
   listPHPVersions: () =>
     api.get<{ versions: string[] }>('/webserver/php'),

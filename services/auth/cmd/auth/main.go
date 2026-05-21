@@ -95,6 +95,8 @@ func main() {
 	v1.Post("/login", authHandler.Login)
 	v1.Post("/refresh", authHandler.Refresh)
 	v1.Post("/mfa/verify", mfaHandler.Verify)
+	v1.Post("/forgot-password", authHandler.ForgotPassword)
+	v1.Post("/reset-password", authHandler.ResetPassword)
 
 	// OAuth routes
 	v1.Get("/oauth/:provider", oauthHandler.Redirect)

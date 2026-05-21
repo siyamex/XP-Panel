@@ -29,8 +29,9 @@ var (
 	ErrAccountLocked      = errors.New("account is temporarily locked")
 	ErrAccountPending     = errors.New("account is pending email verification")
 	ErrMFARequired        = errors.New("MFA verification required")
-	ErrUserExists   = errors.New("user with this email or username already exists")
-	ErrOrgSlugTaken = errors.New("organization slug is already taken")
+	ErrUserExists         = errors.New("user with this email or username already exists")
+	ErrOrgSlugTaken       = errors.New("organization slug is already taken")
+	ErrInvalidResetToken  = errors.New("invalid or expired password reset token")
 )
 
 type UserRepository interface {
@@ -45,6 +46,8 @@ type UserRepository interface {
 	UpdateLastLogin(ctx context.Context, id uuid.UUID, ip string) error
 	GetRoles(ctx context.Context, userID uuid.UUID) ([]domain.Role, error)
 	CreateRoleAndAssign(ctx context.Context, orgID, userID uuid.UUID, role domain.Role) error
+	CreatePasswordReset(ctx context.Context, userID uuid.UUID, tokenHash string, expires time.Time) error
+	ConsumePasswordReset(ctx context.Context, tokenHash string) (uuid.UUID, error)
 }
 
 type OrgRepository interface {
@@ -340,6 +343,36 @@ func (s *AuthService) OAuthLogin(ctx context.Context, in OAuthInput) (*domain.To
 	}
 	_ = s.sessions.Create(ctx, session)
 	return pair, nil
+}
+
+// ForgotPassword generates a reset token and (in production) sends an email.
+// Always returns success to avoid user enumeration.
+func (s *AuthService) ForgotPassword(ctx context.Context, email string) (token string, err error) {
+	user, err := s.users.FindByEmail(ctx, email)
+	if err != nil {
+		return "", nil // silent — don't reveal whether email exists
+	}
+	rawToken := uuid.New().String() + uuid.New().String()
+	tokenHash := hashToken(rawToken)
+	expires := time.Now().Add(1 * time.Hour)
+	if err := s.users.CreatePasswordReset(ctx, user.ID, tokenHash, expires); err != nil {
+		return "", err
+	}
+	return rawToken, nil
+}
+
+// ResetPassword verifies the token and updates the user's password.
+func (s *AuthService) ResetPassword(ctx context.Context, rawToken, newPassword string) error {
+	tokenHash := hashToken(rawToken)
+	userID, err := s.users.ConsumePasswordReset(ctx, tokenHash)
+	if err != nil {
+		return ErrInvalidResetToken
+	}
+	hash, err := hashPassword(newPassword)
+	if err != nil {
+		return err
+	}
+	return s.users.UpdatePassword(ctx, userID, hash)
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

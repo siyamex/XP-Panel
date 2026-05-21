@@ -117,6 +117,22 @@ export const authApi = {
     return data;
   },
 
+  forgotPassword: async (email: string) => {
+    const { data } = await apiClient.post<{ message: string }>(
+      "/auth/forgot-password",
+      { email }
+    );
+    return data;
+  },
+
+  resetPassword: async (token: string, password: string) => {
+    const { data } = await apiClient.post<{ message: string }>(
+      "/auth/reset-password",
+      { token, password }
+    );
+    return data;
+  },
+
   oauthRedirect: (provider: "github" | "google" | "gitlab") => {
     const apiBase = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
     window.location.href = `${apiBase}/api/v1/auth/oauth/${provider}`;

@@ -69,6 +69,8 @@ func main() {
 	app.Post("/api/v1/auth/login", authRL, prx.To(cfg.AuthURL))
 	app.Post("/api/v1/auth/refresh", authRL, prx.To(cfg.AuthURL))
 	app.Post("/api/v1/auth/mfa/verify", authRL, prx.To(cfg.AuthURL))
+	app.Post("/api/v1/auth/forgot-password", authRL, prx.To(cfg.AuthURL))
+	app.Post("/api/v1/auth/reset-password", authRL, prx.To(cfg.AuthURL))
 	app.Get("/api/v1/auth/oauth2/:provider", prx.To(cfg.AuthURL))
 	app.Get("/api/v1/auth/oauth2/:provider/callback", prx.To(cfg.AuthURL))
 
